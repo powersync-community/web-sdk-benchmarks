@@ -1,6 +1,8 @@
-# PowerSync React Demo — Watch Query & VFS Benchmarks
+# PowerSync Web Bench
 
 A React demo app that benchmarks PowerSync's watch query implementations and VFS storage backends side-by-side. Three modes let you explore different dimensions of performance.
+
+> All source was written with AI assistance. 
 
 ## Modes
 
@@ -45,10 +47,11 @@ Measures raw database operation latency for each VFS backend with no watch queri
 | **Single Writes** | N individual inserts, one commit per row. Exposes per-commit VFS overhead. |
 | **Transaction Writes** | N inserts in a single `writeTransaction()`. One commit total — the best-case baseline. |
 | **Reads** | N primary-key lookups against the rows written in the transaction phase. |
+| **Read Under Write Pressure** | N reads while a background write loop runs at full speed simultaneously. The latency delta vs plain Reads shows how much the VFS serialises reads behind write commits. |
 
 Results show total time, ops/sec, and per-operation min / median / p95 / max. The gap between Single Writes and Transaction Writes is the key signal: a large gap means the VFS has expensive per-commit overhead and single writes should be avoided in hot paths.
 
-The number of operations N is configurable (default 100).
+The number of operations N is configurable (default 100). A **comparison chart** (bar chart icon in the header) overlays min and p95 latency for all active backends side-by-side across every phase.
 
 ## Getting Started
 

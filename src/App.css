@@ -1,13 +1,134 @@
+/* App root — outermost container */
+.app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Mode toggle bar */
+.mode-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 6px 12px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.mode-toggle-button {
+  padding: 4px 12px;
+  font-size: 12px;
+  border: 1px solid #444;
+  border-radius: 3px;
+  background: #2a2a2a;
+  color: #999;
+  cursor: pointer;
+}
+
+.mode-toggle-button:hover {
+  background: #333;
+  color: rgba(255, 255, 255, 0.87);
+}
+
+.mode-toggle-button.active {
+  background: #3a3a3a;
+  border-color: #666;
+  color: rgba(255, 255, 255, 0.87);
+  font-weight: 600;
+}
+
 /* Root container */
 .app-container {
   padding: 12px;
   max-width: 100%;
   margin: 0 auto;
-  height: 96vh;
+  flex: 1;
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 12px;
   overflow: hidden;
+}
+
+/* VFS column header */
+.vfs-column-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.87);
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #333;
+}
+
+/* VFS status placeholder */
+.vfs-status {
+  align-items: flex-start;
+}
+
+.vfs-spinner-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.vfs-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #444;
+  border-top-color: #888;
+  border-radius: 50%;
+  animation: vfs-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes vfs-spin {
+  to { transform: rotate(360deg); }
+}
+
+.vfs-status-message {
+  font-size: 11px;
+  color: #999;
+  margin: 0;
+}
+
+/* VFS init progress banner */
+.vfs-init-banner {
+  font-size: 11px;
+  color: #999;
+  background: #252525;
+  border: 1px solid #383838;
+  border-radius: 3px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+}
+
+/* VFS checkbox list */
+.vfs-checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.vfs-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.87);
+  cursor: pointer;
+}
+
+.vfs-checkbox-label input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.vfs-checkbox-label input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 /* Main content area */
@@ -436,4 +557,122 @@ code {
   padding: 2px 4px;
   border-radius: 3px;
   font-size: 12px;
+}
+
+/* ── Raw VFS Benchmark ─────────────────────────────────────────────── */
+
+.bench-card {
+  gap: 0;
+}
+
+.bench-card-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.87);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.bench-card-placeholder {
+  font-size: 11px;
+  color: #555;
+  text-align: center;
+  padding: 24px 0;
+}
+
+.bench-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #999;
+  padding: 16px 0;
+}
+
+.bench-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.bench-phase {
+  border: 1px solid #2a2a2a;
+  border-radius: 3px;
+  padding: 8px;
+  background: #171717;
+}
+
+.bench-phase-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.bench-n {
+  font-weight: 400;
+  color: #555;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.bench-phase-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 3px 8px;
+}
+
+.bench-stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.bench-stat-label {
+  color: #666;
+}
+
+.bench-stat-value {
+  color: rgba(255, 255, 255, 0.87);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.bench-stat-dim {
+  color: #444;
+  font-style: italic;
+}
+
+/* Benchmark N input in sidebar */
+.bench-n-input {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.bench-n-label {
+  font-size: 11px;
+  color: #999;
+}
+
+.bench-n-field {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid #555;
+  border-radius: 3px;
+  font-size: 12px;
+  background: #2a2a2a;
+  color: rgba(255, 255, 255, 0.87);
+  box-sizing: border-box;
+}
+
+.bench-n-field:disabled {
+  opacity: 0.5;
 }

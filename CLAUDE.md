@@ -15,9 +15,17 @@ No test runner is configured — this is a demo/showcase app.
 
 ## Architecture
 
-This is a **React demo app** comparing four PowerSync watch query implementations side-by-side to illustrate their rendering performance characteristics.
+This is a **React demo app** with three modes for benchmarking PowerSync performance.
 
-### Watch Query Implementations (the core comparison)
+### Modes
+
+| Mode | Purpose |
+|------|---------|
+| Watch Query Comparison | Four watch strategies against one DB; measures React rendering impact |
+| VFS Comparison | One watch strategy (selectable) against four VFS backends simultaneously |
+| Raw VFS Benchmark | Direct read/write latency benchmark — no watch queries |
+
+### Watch Query Implementations
 
 | Component | Hook/API | Key Trade-off |
 |-----------|----------|---------------|
@@ -26,19 +34,41 @@ This is a **React demo app** comparing four PowerSync watch query implementation
 | `DifferentialWatchList` | `query.differentialWatch()` | Preserves object references; React.memo prevents child re-renders |
 | `TriggerBasedList` | `db.triggers.trackTableDiff()` | O(writes) not O(results); works on a single table only |
 
+All four accept optional `watchId?` and `title?` props so they can run as multiple simultaneous instances with independent metrics slots (used in VFS Comparison mode).
+
 `DifferentialWatchList` + `MemoizedTodoItem` is the optimal pattern for large datasets.
+
+### VFS Backends
+
+Defined in `src/vfsConfig.ts`. Each entry has an `id`, `label`, `vfs` enum value, and a `dbFilename` distinct from the main `exampleVFS.db`.
+
+| ID | VFS | Storage |
+|----|-----|---------|
+| `idb-batch` | `IDBBatchAtomicVFS` | IndexedDB |
+| `opfs-coop` | `OPFSCoopSyncVFS` | OPFS |
+| `access-handle-pool` | `AccessHandlePoolVFS` | OPFS (access handles) |
+| `opfs-wal` | `OPFSWriteAheadVFS` | OPFS + WAL (default) |
 
 ### Key Files
 
-- `src/powersync.ts` — DB schema (`lists`, `todos`), connector, and backend config (localhost:6060 / localhost:8080)
-- `src/App.tsx` — Root component, `PowerSyncContext` provider, app-level state
+- `src/powersync.ts` — DB schema (`lists`, `todos`), connector, backend config (localhost:6060 / localhost:8080), `initPowerSync()`
+- `src/vfsConfig.ts` — `VFS_CONFIGS` array; single source of truth for VFS metadata
+- `src/queryTypeConfig.ts` — `QUERY_TYPE_CONFIGS` + `QueryType` type
+- `src/App.tsx` — Root component; `PowerSyncContext` provider; mode state; `useVfsDatabases` lifted here so VFS DBs survive switching between VFS Comparison and Raw Benchmark
 - `src/stores/metricsStore.ts` — Zustand store with a deliberately split design:
   - `useMetricsActions` — stable mutation API, **non-reactive** (no re-renders)
   - `useMetricsState` / `useWatchMetricsState(watchId)` — reactive selectors
-- `src/components/ControlPanel.tsx` — Test scenario controls (seed data, update patterns, throttle slider)
+- `src/components/ControlPanel.tsx` — Test scenario controls; accepts optional `databases?` array to broadcast writes to all VFS DBs, and `extraControls?` slot for injecting VFS-mode UI
 - `src/components/MetricsDashboard.tsx` — Global metrics header
-- `src/components/TodoListMetrics.tsx` — Per-watch latency and render metrics
+- `src/components/TodoListMetrics.tsx` — Per-watch latency (avg/last/low/median) and render metrics
+- `src/components/VfsWatchColumn.tsx` — Wraps a `VFSInstance` in its own `PowerSyncContext`; renders loading/error/ready states
+- `src/components/VfsModePanel.tsx` — Checkbox list for toggling VFS backends (min 1 required)
+- `src/components/VfsQueryTypePanel.tsx` — Radio selector for query type in VFS Comparison
+- `src/components/RawBenchmarkContent.tsx` — Raw benchmark page layout
+- `src/components/BenchmarkResultCard.tsx` — Per-VFS benchmark results (single writes / tx writes / reads)
 - `src/hooks/useWatchMetrics.ts` — Creates per-watch stable metrics API
+- `src/hooks/useVfsDatabases.ts` — Creates, initialises, wires metrics for, and disposes all 4 VFS DB instances; controlled by `enabled` flag
+- `src/hooks/useVfsBenchmark.ts` — Benchmark runner; three phases run in parallel per DB; `cancelledRef` prevents state updates after cancel/unmount
 - `src/utils/metricsWrapper.ts` — Connects PowerSync DB events to write-count tracking
 
 ### Metrics Store Pattern
@@ -53,7 +83,21 @@ const actions = useMetricsActions();
 const metrics = useWatchMetricsState('differential');
 ```
 
-Item render counts are capped at 500 entries for memory safety.
+Per-watch latency tracks: average, last, lowest, and median. Item render counts are capped at 500 entries for memory safety.
+
+### Raw Benchmark Isolation
+
+Benchmark rows use `list_id = "00000000-0000-bench-0000-000000000000"` so they never appear in watch query columns. The three benchmark phases are:
+1. **Single Writes** — N individual `execute()` calls (one commit each); measures per-commit VFS overhead
+2. **Transaction Writes** — N inserts in one `writeTransaction()` (one commit); the best-case baseline
+3. **Reads** — N `getOptional()` by PK against the rows left by transaction writes
+
+### VFS DB Lifecycle
+
+`useVfsDatabases(enabled)` is called at `App` level with `enabled = mode !== "watch-query"`. This means:
+- VFS DBs initialise once when entering either VFS mode
+- Switching between VFS Comparison and Raw Benchmark reuses the same open DB handles
+- Switching back to Watch Query mode disposes all four instances and cleans up metrics listeners
 
 ### Vite / Build Notes
 

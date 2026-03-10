@@ -1,6 +1,6 @@
 import { memo, useEffect } from "react";
+import { usePowerSync } from "@powersync/react";
 import { useFlashEffect } from "../hooks/useFlashEffect";
-import { powerSyncDatabase } from "../powersync";
 
 interface Todo {
   id: string;
@@ -20,6 +20,7 @@ interface TodoItemProps {
  * Basic TodoItem component - always re-renders when parent re-renders
  */
 export function BasicTodoItem({ todo, onRender }: TodoItemProps) {
+  const db = usePowerSync();
   const flash = useFlashEffect([todo]);
 
   // Track item render
@@ -30,7 +31,7 @@ export function BasicTodoItem({ todo, onRender }: TodoItemProps) {
 
   const toggleTodo = async () => {
     const newCompleted = todo.completed === 0 ? 1 : 0;
-    await powerSyncDatabase.execute(
+    await db?.execute(
       `UPDATE todos SET completed = ? WHERE id = ?`,
       [newCompleted, todo.id],
     );
@@ -64,6 +65,7 @@ const TodoItemComponent = ({
   isUpdated,
   onRender,
 }: TodoItemProps) => {
+  const db = usePowerSync();
   const flash = useFlashEffect([todo]);
 
   // Track item render
@@ -74,7 +76,7 @@ const TodoItemComponent = ({
 
   const toggleTodo = async () => {
     const newCompleted = todo.completed === 0 ? 1 : 0;
-    await powerSyncDatabase.execute(
+    await db?.execute(
       `UPDATE todos SET completed = ? WHERE id = ?`,
       [newCompleted, todo.id],
     );

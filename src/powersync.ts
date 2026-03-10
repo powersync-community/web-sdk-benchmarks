@@ -8,7 +8,7 @@ import {
   WASQLiteOpenFactory
 } from "@powersync/web";
 
-const schema = new Schema({
+export const schema = new Schema({
   lists: new Table({
     name: column.text,
     created_at: column.text,

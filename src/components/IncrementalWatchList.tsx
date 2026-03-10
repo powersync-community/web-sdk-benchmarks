@@ -14,6 +14,8 @@ interface Todo {
 interface IncrementalWatchListProps {
   listId: string;
   throttleMs: number;
+  watchId?: string;
+  title?: string;
 }
 
 /**
@@ -25,8 +27,12 @@ interface IncrementalWatchListProps {
  * - ⚠️ Still creates new array reference when emitting
  * - ⚠️ Child components still re-render (no memo benefit)
  */
-export function IncrementalWatchList({ listId, throttleMs }: IncrementalWatchListProps) {
-  const watchId = "incremental-watch";
+export function IncrementalWatchList({
+  listId,
+  throttleMs,
+  watchId = "incremental-watch",
+  title = "Incremental Watch",
+}: IncrementalWatchListProps) {
   const metrics = useWatchMetrics(watchId);
 
   const { data: todos = [], isFetching } = useQuery<Todo>(
@@ -78,7 +84,7 @@ export function IncrementalWatchList({ listId, throttleMs }: IncrementalWatchLis
           <li>Memo-optimized</li>
         </ul>
       </div>
-      <TodoListMetrics watchId={watchId} title="Incremental Watch" />
+      <TodoListMetrics watchId={watchId} title={title} />
       <ul className="todo-list">
         {todos.map((todo) => (
           <MemoizedTodoItem

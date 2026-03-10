@@ -14,6 +14,8 @@ interface Todo {
 interface BasicWatchListProps {
   listId: string;
   throttleMs: number;
+  watchId?: string;
+  title?: string;
 }
 
 /**
@@ -26,8 +28,12 @@ interface BasicWatchListProps {
  * - ✅ Simple API with built-in loading states
  * - ✅ Built-in throttling support
  */
-export function BasicWatchList({ listId, throttleMs }: BasicWatchListProps) {
-  const watchId = "basic-watch";
+export function BasicWatchList({
+  listId,
+  throttleMs,
+  watchId = "basic-watch",
+  title = "Basic Watch",
+}: BasicWatchListProps) {
   const metrics = useWatchMetrics(watchId);
 
   const { data: todos = [], isFetching } = useQuery<Todo>(
@@ -75,7 +81,7 @@ export function BasicWatchList({ listId, throttleMs }: BasicWatchListProps) {
           <li>All items re-render</li>
         </ul>
       </div>
-      <TodoListMetrics watchId={watchId} title="Basic Watch" />
+      <TodoListMetrics watchId={watchId} title={title} />
       <ul className="todo-list">
         {todos.map((todo) => (
           <BasicTodoItem

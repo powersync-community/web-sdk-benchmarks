@@ -14,6 +14,8 @@ interface Todo {
 interface DifferentialWatchListProps {
   listId: string;
   throttleMs: number;
+  watchId?: string;
+  title?: string;
 }
 
 /**
@@ -29,10 +31,11 @@ interface DifferentialWatchListProps {
 export function DifferentialWatchList({
   listId,
   throttleMs,
+  watchId = "differential-watch",
+  title = "Differential Watch",
 }: DifferentialWatchListProps) {
   const db = usePowerSync();
   const [todos, setTodos] = useState<Todo[]>([]);
-  const watchId = "differential-watch";
   const metrics = useWatchMetrics(watchId);
 
   useEffect(() => {
@@ -103,7 +106,7 @@ export function DifferentialWatchList({
           <li>Diff metadata</li>
         </ul>
       </div>
-      <TodoListMetrics watchId={watchId} title="Differential Watch" />
+      <TodoListMetrics watchId={watchId} title={title} />
       <ul className="todo-list">
         {todos.map((todo) => (
           <MemoizedTodoItem

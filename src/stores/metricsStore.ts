@@ -31,6 +31,8 @@ export interface WatchMetrics {
   // Latency tracking
   latencyMeasurements: number[];
   averageLatency: number | null;
+  medianLatency: number | null;
+  lowestLatency: number | null;
   lastQueryLatency: number | null;
 }
 
@@ -50,6 +52,8 @@ export const createEmptyWatchMetrics = (): WatchMetrics => ({
   triggerFireCount: 0,
   latencyMeasurements: [],
   averageLatency: null,
+  medianLatency: null,
+  lowestLatency: null,
   lastQueryLatency: null,
 });
 
@@ -256,11 +260,19 @@ export function createWatchMetricsAPI(watchId: string, renderCountRef: { current
       updateWatchMetrics(watchId, (metrics) => {
         const newMeasurements = [...metrics.latencyMeasurements, latency].slice(-MAX_LATENCY_MEASUREMENTS);
         const averageLatency = newMeasurements.reduce((a, b) => a + b, 0) / newMeasurements.length;
+        const lowestLatency = Math.min(...newMeasurements);
+        const sorted = [...newMeasurements].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        const medianLatency = sorted.length % 2 === 0
+          ? (sorted[mid - 1] + sorted[mid]) / 2
+          : sorted[mid];
 
         return {
           ...metrics,
           latencyMeasurements: newMeasurements,
           averageLatency,
+          medianLatency,
+          lowestLatency,
           lastQueryLatency: latency,
         };
       });

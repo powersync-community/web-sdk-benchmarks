@@ -1,10 +1,14 @@
 import { usePowerSync } from "@powersync/react";
+import { AbstractPowerSyncDatabase } from "@powersync/web";
+import { useMetricsActions } from "../stores/metricsStore";
 
 interface ControlPanelProps {
   listId: string;
   throttleMs: number;
   onThrottleChange: (value: number) => void;
   onToggleList: () => void;
+  databases?: AbstractPowerSyncDatabase[];
+  extraControls?: React.ReactNode;
 }
 
 export function ControlPanel({
@@ -12,103 +16,125 @@ export function ControlPanel({
   throttleMs,
   onThrottleChange,
   onToggleList,
+  databases,
+  extraControls,
 }: ControlPanelProps) {
-  const db = usePowerSync();
+  const contextDb = usePowerSync();
+  const { resetAllMetrics } = useMetricsActions();
+  const activeDatabases =
+    databases && databases.length > 0
+      ? databases
+      : contextDb
+        ? [contextDb]
+        : [];
 
   const seedData = async () => {
-    if (!db) return;
-    // Use a single transaction for deterministic behavior
-    // All inserts become a single write event, making emission counts reproducible
-    await db.writeTransaction(async (tx) => {
-      for (let i = 0; i < 100; i++) {
-        const id = crypto.randomUUID();
-        await tx.execute(
-          `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
-          [id, `Todo ${i + 1}`, listId, 0],
-        );
-      }
-    });
+    if (activeDatabases.length === 0) return;
+    await Promise.all(
+      activeDatabases.map((db) =>
+        db.writeTransaction(async (tx) => {
+          for (let i = 0; i < 100; i++) {
+            const id = crypto.randomUUID();
+            await tx.execute(
+              `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
+              [id, `Todo ${i + 1}`, listId, 0],
+            );
+          }
+        }),
+      ),
+    );
   };
 
   const seedLargeDataset = async () => {
-    if (!db) return;
-    // Use a single transaction for deterministic behavior
-    await db.writeTransaction(async (tx) => {
-      for (let i = 0; i < 500; i++) {
-        const id = crypto.randomUUID();
-        await tx.execute(
-          `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
-          [id, `Large dataset todo ${i + 1}`, listId, 0],
-        );
-      }
-    });
+    if (activeDatabases.length === 0) return;
+    await Promise.all(
+      activeDatabases.map((db) =>
+        db.writeTransaction(async (tx) => {
+          for (let i = 0; i < 500; i++) {
+            const id = crypto.randomUUID();
+            await tx.execute(
+              `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
+              [id, `Large dataset todo ${i + 1}`, listId, 0],
+            );
+          }
+        }),
+      ),
+    );
   };
 
   const rapidUpdates = async () => {
-    if (!db) return;
-    const todos = await db.getAll<{ id: string }>(
-      `SELECT id FROM todos WHERE list_id = ? LIMIT 25`,
-      [listId],
+    if (activeDatabases.length === 0) return;
+    // For rapid updates, broadcast per-DB independently (each has its own data)
+    await Promise.all(
+      activeDatabases.map(async (db) => {
+        const todos = await db.getAll<{ id: string }>(
+          `SELECT id FROM todos WHERE list_id = ? LIMIT 25`,
+          [listId],
+        );
+        for (const todo of todos) {
+          await db.execute(`UPDATE todos SET completed = ? WHERE id = ?`, [
+            Math.random() > 0.5 ? 1 : 0,
+            todo.id,
+          ]);
+          await new Promise((resolve) => setTimeout(resolve, 40));
+        }
+      }),
     );
-
-    for (const todo of todos) {
-      await db.execute(`UPDATE todos SET completed = ? WHERE id = ?`, [
-        Math.random() > 0.5 ? 1 : 0,
-        todo.id,
-      ]);
-      await new Promise((resolve) => setTimeout(resolve, 40)); // 25 updates in ~1 second
-    }
   };
 
   const singleUpdate = async () => {
-    if (!db) return;
-    const todos = await db.getAll<{ id: string; completed: number }>(
-      `SELECT id, completed FROM todos WHERE list_id = ? LIMIT 1`,
-      [listId],
+    if (activeDatabases.length === 0) return;
+    await Promise.all(
+      activeDatabases.map(async (db) => {
+        const todos = await db.getAll<{ id: string; completed: number }>(
+          `SELECT id, completed FROM todos WHERE list_id = ? LIMIT 1`,
+          [listId],
+        );
+        if (todos.length > 0) {
+          const todo = todos[0];
+          await db.execute(`UPDATE todos SET completed = ? WHERE id = ?`, [
+            todo.completed === 0 ? 1 : 0,
+            todo.id,
+          ]);
+        }
+      }),
     );
-
-    if (todos.length > 0) {
-      const todo = todos[0];
-      await db.execute(`UPDATE todos SET completed = ? WHERE id = ?`, [
-        todo.completed === 0 ? 1 : 0,
-        todo.id,
-      ]);
-    }
   };
 
   const updateUnrelatedTable = async () => {
-    if (!db) return;
-    // Get the "other" list ID (not the current one)
+    if (activeDatabases.length === 0) return;
     const otherListId =
       listId === "75f89104-d95a-4f16-8309-5363f1bb377a"
         ? "c1e2f3a4-5678-90ab-cdef-1234567890ab"
         : "75f89104-d95a-4f16-8309-5363f1bb377a";
 
-    // Update a todo in the unrelated list
-    const todos = await db.getAll<{ id: string; completed: number }>(
-      `SELECT id, completed FROM todos WHERE list_id = ? LIMIT 1`,
-      [otherListId],
+    await Promise.all(
+      activeDatabases.map(async (db) => {
+        const todos = await db.getAll<{ id: string; completed: number }>(
+          `SELECT id, completed FROM todos WHERE list_id = ? LIMIT 1`,
+          [otherListId],
+        );
+        if (todos.length > 0) {
+          const todo = todos[0];
+          await db.execute(`UPDATE todos SET completed = ? WHERE id = ?`, [
+            todo.completed === 0 ? 1 : 0,
+            todo.id,
+          ]);
+        } else {
+          const id = crypto.randomUUID();
+          await db.execute(
+            `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
+            [id, "Unrelated todo", otherListId, 0],
+          );
+        }
+      }),
     );
-
-    if (todos.length > 0) {
-      const todo = todos[0];
-      await db.execute(`UPDATE todos SET completed = ? WHERE id = ?`, [
-        todo.completed === 0 ? 1 : 0,
-        todo.id,
-      ]);
-    } else {
-      // If no todos exist in the other list, create one
-      const id = crypto.randomUUID();
-      await db.execute(
-        `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
-        [id, "Unrelated todo", otherListId, 0],
-      );
-    }
   };
 
   const cleanData = async () => {
-    if (!db) return;
-    await db.execute(`DELETE FROM todos`);
+    if (activeDatabases.length === 0) return;
+    await Promise.all(activeDatabases.map((db) => db.execute(`DELETE FROM todos`)));
+    resetAllMetrics();
   };
 
   return (
@@ -205,6 +231,8 @@ export function ControlPanel({
           </p>
         </div>
       </div>
+
+      {extraControls}
 
       <div className="control-section legend">
         <h3>Watch Types</h3>

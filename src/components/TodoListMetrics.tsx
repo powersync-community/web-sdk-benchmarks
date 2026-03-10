@@ -79,34 +79,24 @@ function MetricsGrid({ metrics }: { metrics: WatchMetrics }) {
 }
 
 function LatencySection({ metrics }: { metrics: WatchMetrics }) {
-  const avgLatency =
-    metrics.averageLatency !== null
-      ? `${metrics.averageLatency.toFixed(1)}ms`
-      : "—";
-  const lastLatency =
-    metrics.lastQueryLatency !== null
-      ? `${metrics.lastQueryLatency.toFixed(1)}ms`
-      : "—";
+  const fmt = (v: number | null) => v !== null ? `${v.toFixed(1)}ms` : "—";
 
   return (
     <div
       style={{
         display: "grid",
         gridTemplateColumns: "repeat(2, 1fr)",
-        gap: "16px",
+        gap: "6px 16px",
         fontSize: "11px",
         color: "#888",
         paddingTop: "8px",
         borderTop: "1px solid #333",
       }}
     >
-      <span>
-        Avg
-        <span style={{ color: "#4caf50", marginLeft: "1rem" }}>{avgLatency}</span>
-      </span>
-      <span>
-        Last <span style={{ color: "#2196f3", marginLeft: "1rem" }}>{lastLatency}</span>
-      </span>
+      <span>Avg <span style={{ color: "#4caf50", marginLeft: "0.5rem" }}>{fmt(metrics.averageLatency)}</span></span>
+      <span>Last <span style={{ color: "#2196f3", marginLeft: "0.5rem" }}>{fmt(metrics.lastQueryLatency)}</span></span>
+      <span>Low <span style={{ color: "#ff9800", marginLeft: "0.5rem" }}>{fmt(metrics.lowestLatency)}</span></span>
+      <span>Median <span style={{ color: "#9c27b0", marginLeft: "0.5rem" }}>{fmt(metrics.medianLatency)}</span></span>
     </div>
   );
 }

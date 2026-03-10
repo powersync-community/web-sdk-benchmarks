@@ -7,6 +7,8 @@ import { BasicTodoItem } from "./TodoItem";
 interface TriggerBasedListProps {
   listId: string;
   throttleMs: number;
+  watchId?: string;
+  title?: string;
 }
 
 interface Todo {
@@ -37,9 +39,10 @@ type DiffRow = {
 export function TriggerBasedList({
   listId,
   throttleMs,
+  watchId = "trigger-based",
+  title = "Trigger-Based Diff",
 }: TriggerBasedListProps) {
   const db = usePowerSync();
-  const watchId = "trigger-based";
   const metrics = useWatchMetrics(watchId);
 
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -154,7 +157,7 @@ export function TriggerBasedList({
           <li>⚠️ Single table only</li>
         </ul>
       </div>
-      <TodoListMetrics watchId={watchId} title="Trigger-Based Diff" />
+      <TodoListMetrics watchId={watchId} title={title} />
       <ul className="todo-list">
         {todos.map((todo) => (
           <BasicTodoItem

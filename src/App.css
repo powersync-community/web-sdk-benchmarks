@@ -41,8 +41,6 @@
 /* Root container */
 .app-container {
   padding: 12px;
-  max-width: 100%;
-  margin: 0 auto;
   flex: 1;
   display: grid;
   grid-template-columns: 320px 1fr;
@@ -675,4 +673,131 @@ code {
 
 .bench-n-field:disabled {
   opacity: 0.5;
+}
+
+/* Benchmark header row (title + icon button) */
+.bench-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.bench-chart-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #2a2a2a;
+  color: #888;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.bench-chart-icon-btn:hover {
+  background: #333;
+  color: rgba(255, 255, 255, 0.87);
+  border-color: #666;
+}
+
+/* Line chart label row (title + expand button) */
+.bench-line-chart-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  margin-bottom: 2px;
+}
+
+.bench-line-chart-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.bench-expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid #333;
+  border-radius: 3px;
+  background: transparent;
+  color: #555;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.bench-expand-btn:hover {
+  background: #2a2a2a;
+  color: #aaa;
+  border-color: #555;
+}
+
+/* Line chart container inside each VFS card */
+.bench-line-chart {
+  height: 120px;
+  flex-shrink: 0;
+}
+
+/* Enlarged line chart inside modal */
+.bench-line-chart-large {
+  height: 360px;
+}
+
+/* Modal */
+.bench-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bench-modal {
+  background: #1e1e1e;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 20px;
+  width: min(700px, 90vw);
+}
+
+.bench-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.bench-modal-header h2 {
+  margin: 0;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.87);
+}
+
+.bench-modal-header button {
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.bench-modal-header button:hover {
+  color: rgba(255, 255, 255, 0.87);
+  background: transparent;
+}
+
+.bench-compare-chart {
+  height: 260px;
 }

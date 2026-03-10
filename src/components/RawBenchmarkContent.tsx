@@ -3,6 +3,7 @@ import { type VFSInstance } from "../hooks/useVfsDatabases";
 import { useVfsBenchmark } from "../hooks/useVfsBenchmark";
 import { BenchmarkResultCard } from "./BenchmarkResultCard";
 import { VfsModePanel } from "./VfsModePanel";
+import { VfsBenchmarkCompareChart } from "./VfsBenchmarkCompareChart";
 
 interface RawBenchmarkContentProps {
   instances: VFSInstance[];
@@ -16,6 +17,7 @@ export function RawBenchmarkContent({
   onToggleVfs,
 }: RawBenchmarkContentProps) {
   const [n, setN] = useState(100);
+  const [showCompareChart, setShowCompareChart] = useState(false);
   const { states, isRunning, run, cancel } = useVfsBenchmark();
 
   const visibleInstances = instances.filter((i) => activeVfsIds.has(i.config.id));
@@ -63,7 +65,7 @@ export function RawBenchmarkContent({
             >
               <span className="button-label">Run Benchmark</span>
               <span className="button-description">
-                Runs all three phases for each active VFS in parallel.
+                Runs all four phases for each active VFS in parallel.
               </span>
             </button>
           )}
@@ -87,6 +89,12 @@ export function RawBenchmarkContent({
               N primary-key lookups against the rows from the transaction phase. Measures read
               latency under no write pressure.
             </dd>
+            <dt>Read Under Write Pressure</dt>
+            <dd>
+              N reads while a background write loop runs at full speed simultaneously. Compare
+              latency to the Reads phase — the difference shows how much the VFS blocks reads
+              behind write commits.
+            </dd>
           </dl>
         </div>
 
@@ -95,10 +103,26 @@ export function RawBenchmarkContent({
 
       <main className="main-content">
         <header>
-          <h1>Raw VFS Benchmark</h1>
-          <p className="subtitle">
-            Per-operation latency — single writes vs transaction vs reads ({n} ops each)
-          </p>
+          <div className="bench-header-row">
+            <div>
+              <h1>Raw VFS Benchmark</h1>
+              <p className="subtitle">
+                Per-operation latency — single writes vs transaction vs reads ({n} ops each)
+              </p>
+            </div>
+            <button
+              className="bench-chart-icon-btn"
+              onClick={() => setShowCompareChart(true)}
+              title="Compare VFS results"
+            >
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="1" y="9" width="3" height="8" rx="1" fill="currentColor"/>
+                <rect x="6" y="5" width="3" height="12" rx="1" fill="currentColor"/>
+                <rect x="11" y="2" width="3" height="15" rx="1" fill="currentColor"/>
+                <rect x="16" y="6" width="1" height="1" rx="0.5" fill="currentColor"/>
+              </svg>
+            </button>
+          </div>
         </header>
 
         <div
@@ -115,6 +139,18 @@ export function RawBenchmarkContent({
           ))}
         </div>
       </main>
+
+      {showCompareChart && (
+        <div className="bench-modal-backdrop" onClick={() => setShowCompareChart(false)}>
+          <div className="bench-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="bench-modal-header">
+              <h2>VFS Comparison — Min &amp; p95 Latency</h2>
+              <button onClick={() => setShowCompareChart(false)}>✕</button>
+            </div>
+            <VfsBenchmarkCompareChart states={states} instances={visibleInstances} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

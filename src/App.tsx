@@ -26,9 +26,9 @@ function App() {
     new Set(VFS_CONFIGS.map((c) => c.id)),
   );
 
-  // VFS DB instances are shared between vfs-comparison and raw-benchmark
-  // so switching between them doesn't re-initialize the databases.
-  const { instances } = useVfsDatabases(mode !== "watch-query");
+  // Only initialize VFS DB instances for the live VFS comparison view.
+  // The raw benchmark creates and destroys its own isolated instances.
+  const { instances } = useVfsDatabases(mode === "vfs-comparison");
 
   const toggleVfsId = (id: string) => {
     setActiveVfsIds((prev) => {
@@ -77,7 +77,6 @@ function App() {
         )}
         {mode === "raw-benchmark" && (
           <RawBenchmarkContent
-            instances={instances}
             activeVfsIds={activeVfsIds}
             onToggleVfs={toggleVfsId}
           />

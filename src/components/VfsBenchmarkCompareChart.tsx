@@ -9,13 +9,13 @@ import {
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import { type BenchmarkInstanceState } from "../hooks/useVfsBenchmark";
-import { type VFSInstance } from "../hooks/useVfsDatabases";
+import { type VFSConfig } from "../vfsConfig";
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, Legend, Tooltip);
 
 interface VfsBenchmarkCompareChartProps {
   states: Map<string, BenchmarkInstanceState>;
-  instances: VFSInstance[];
+  vfsConfigs: VFSConfig[];
 }
 
 // Strip "VFS" suffix for shorter labels
@@ -23,8 +23,8 @@ function shortLabel(label: string) {
   return label.replace(/VFS$/, "");
 }
 
-export function VfsBenchmarkCompareChart({ states, instances }: VfsBenchmarkCompareChartProps) {
-  const done = instances.filter((inst) => states.get(inst.config.id)?.status === "done");
+export function VfsBenchmarkCompareChart({ states, vfsConfigs }: VfsBenchmarkCompareChartProps) {
+  const done = vfsConfigs.filter((cfg) => states.get(cfg.id)?.status === "done");
 
   if (done.length === 0) {
     return (
@@ -34,20 +34,20 @@ export function VfsBenchmarkCompareChart({ states, instances }: VfsBenchmarkComp
     );
   }
 
-  const labels = done.map((inst) => shortLabel(inst.config.label));
+  const labels = done.map((cfg) => shortLabel(cfg.label));
 
-  const readMin    = done.map((inst) => states.get(inst.config.id)!.result!.reads.min ?? 0);
-  const readP95    = done.map((inst) => states.get(inst.config.id)!.result!.reads.p95 ?? 0);
-  const concurMin  = done.map((inst) => states.get(inst.config.id)!.result!.concurrency.readMin ?? 0);
-  const concurP95  = done.map((inst) => states.get(inst.config.id)!.result!.concurrency.readP95 ?? 0);
+  const readMin    = done.map((cfg) => states.get(cfg.id)!.result!.reads.min ?? 0);
+  const readP95    = done.map((cfg) => states.get(cfg.id)!.result!.reads.p95 ?? 0);
+  const concurMin  = done.map((cfg) => states.get(cfg.id)!.result!.interleaved.readMin ?? 0);
+  const concurP95  = done.map((cfg) => states.get(cfg.id)!.result!.interleaved.readP95 ?? 0);
 
   const data = {
     labels,
     datasets: [
       { label: "Read min",       data: readMin,   backgroundColor: "#4caf50" },
       { label: "Read p95",       data: readP95,   backgroundColor: "#00897b" },
-      { label: "Concurrent min", data: concurMin, backgroundColor: "#ff9800" },
-      { label: "Concurrent p95", data: concurP95, backgroundColor: "#f44336" },
+      { label: "Interleaved min", data: concurMin, backgroundColor: "#ff9800" },
+      { label: "Interleaved p95", data: concurP95, backgroundColor: "#f44336" },
     ],
   };
 

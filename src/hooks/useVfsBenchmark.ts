@@ -22,7 +22,7 @@ export interface BenchmarkConfig {
 }
 
 export const DEFAULT_BENCHMARK_CONFIG: BenchmarkConfig = {
-  ops: 100,
+  ops: 500,
   writePressure: 2,
   mode: "sequential",
 };
@@ -100,9 +100,9 @@ function computePerOpStats(
   };
 }
 
-/** Small throwaway run to warm up the VFS / WASM layer */
+/** Throwaway run to warm up WASM compilation, SQLite page cache, and VFS layers */
 async function warmup(db: PowerSyncDatabase): Promise<void> {
-  const warmupN = 10;
+  const warmupN = 100;
   await db.execute(`DELETE FROM todos WHERE list_id = ?`, [BENCH_LIST_ID]);
   await db.writeTransaction(async (tx) => {
     for (let i = 0; i < warmupN; i++) {

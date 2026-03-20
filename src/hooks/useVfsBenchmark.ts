@@ -126,12 +126,11 @@ async function warmup(
   const singleIds: string[] = [];
   for (let i = 0; i < 50; i++) {
     if (cancelledRef.current) return;
-    const id = crypto.randomUUID();
-    singleIds.push(id);
-    await db.execute(
-      `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
-      [id, `warmup-single-${i}`, BENCH_LIST_ID, 0],
+    const row = await db.get<{ id: string }>(
+      `INSERT INTO todos (id, description, list_id, completed) VALUES (uuid(), ?, ?, ?) RETURNING id`,
+      [`warmup-single-${i}`, BENCH_LIST_ID, 0],
     );
+    singleIds.push(row.id);
   }
 
   // Transaction writes (mirrors tx-writes phase)
@@ -139,8 +138,8 @@ async function warmup(
     for (let i = 0; i < 50; i++) {
       if (cancelledRef.current) return;
       await tx.execute(
-        `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
-        [crypto.randomUUID(), `warmup-tx-${i}`, BENCH_LIST_ID, 0],
+        `INSERT INTO todos (id, description, list_id, completed) VALUES (uuid(), ?, ?, ?)`,
+        [`warmup-tx-${i}`, BENCH_LIST_ID, 0],
       );
     }
   });
@@ -156,29 +155,21 @@ async function warmup(
   await cleanup(db);
 }
 
-function generateIds(count: number): string[] {
-  const ids: string[] = [];
-  for (let i = 0; i < count; i++) ids.push(crypto.randomUUID());
-  return ids;
-}
-
 async function benchSingleWrites(
   db: PowerSyncDatabase,
   durationSec: number,
   cancelledRef: React.RefObject<boolean>,
 ): Promise<PhaseResult> {
   await cleanup(db);
-  // Pre-generate IDs to avoid measuring UUID generation
   const latencies: number[] = [];
   const deadline = performance.now() + durationSec * 1000;
   const start = performance.now();
   let i = 0;
   while (performance.now() < deadline && !cancelledRef.current) {
-    const id = crypto.randomUUID();
     const t = performance.now();
     await db.execute(
-      `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
-      [id, `bench-single-${i}`, BENCH_LIST_ID, 0],
+      `INSERT INTO todos (id, description, list_id, completed) VALUES (uuid(), ?, ?, ?)`,
+      [`bench-single-${i}`, BENCH_LIST_ID, 0],
     );
     latencies.push(performance.now() - t);
     i++;
@@ -210,10 +201,9 @@ async function benchTxWrites(
     await db.writeTransaction(async (tx) => {
       for (let j = 0; j < batchSize && performance.now() < deadline; j++) {
         if (cancelledRef.current) return;
-        const id = crypto.randomUUID();
         await tx.execute(
-          `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
-          [id, `bench-tx-${count}`, BENCH_LIST_ID, 0],
+          `INSERT INTO todos (id, description, list_id, completed) VALUES (uuid(), ?, ?, ?)`,
+          [`bench-tx-${count}`, BENCH_LIST_ID, 0],
         );
         count++;
       }
@@ -249,17 +239,18 @@ async function benchReads(
   cancelledRef: React.RefObject<boolean>,
 ): Promise<PhaseResult> {
   await cleanup(db);
-  const ids = generateIds(seedCount);
-  // Seed rows
+  // Seed rows using SQL uuid(), collect generated IDs for read lookups
+  const ids: string[] = [];
   for (let batch = 0; batch < seedCount; batch += 500) {
     if (cancelledRef.current) break;
     await db.writeTransaction(async (tx) => {
       const end = Math.min(batch + 500, seedCount);
       for (let i = batch; i < end; i++) {
-        await tx.execute(
-          `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
-          [ids[i], `bench-read-${i}`, BENCH_LIST_ID, 0],
+        const row = await tx.get<{ id: string }>(
+          `INSERT INTO todos (id, description, list_id, completed) VALUES (uuid(), ?, ?, ?) RETURNING id`,
+          [`bench-read-${i}`, BENCH_LIST_ID, 0],
         );
+        ids.push(row.id);
       }
     });
   }
@@ -296,21 +287,27 @@ async function benchReads(
 async function benchInterleaved(
   db: PowerSyncDatabase,
   durationSec: number,
+  readSeedCount: number,
   cancelledRef: React.RefObject<boolean>,
 ): Promise<InterleavedResult> {
   await cleanup(db);
 
-  // Seed rows to read from
-  const seedCount = 50;
-  const readIds = generateIds(seedCount);
-  await db.writeTransaction(async (tx) => {
-    for (let i = 0; i < seedCount; i++) {
-      await tx.execute(
-        `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
-        [readIds[i], `interleaved-read-${i}`, BENCH_LIST_ID, 0],
-      );
-    }
-  });
+  // Use the same seed count as the reads phase for comparable cache behavior
+  const seedCount = readSeedCount;
+  const readIds: string[] = [];
+  for (let batch = 0; batch < seedCount; batch += 500) {
+    if (cancelledRef.current) break;
+    await db.writeTransaction(async (tx) => {
+      const end = Math.min(batch + 500, seedCount);
+      for (let i = batch; i < end; i++) {
+        const row = await tx.get<{ id: string }>(
+          `INSERT INTO todos (id, description, list_id, completed) VALUES (uuid(), ?, ?, ?) RETURNING id`,
+          [`interleaved-read-${i}`, BENCH_LIST_ID, 0],
+        );
+        readIds.push(row.id);
+      }
+    });
+  }
 
   const readLatencies: number[] = [];
   const readSnapshots: { writeCount: number; latencyMs: number }[] = [];
@@ -322,10 +319,9 @@ async function benchInterleaved(
   // Write loop
   const writeLoop = (async () => {
     while (performance.now() < deadline && !cancelledRef.current) {
-      const id = crypto.randomUUID();
       await db.execute(
-        `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
-        [id, "interleaved-write", BENCH_LIST_ID, 0],
+        `INSERT INTO todos (id, description, list_id, completed) VALUES (uuid(), ?, ?, ?)`,
+        ["interleaved-write", BENCH_LIST_ID, 0],
       );
       writesCompleted++;
     }
@@ -489,6 +485,7 @@ export function useVfsBenchmark() {
           const interleaved = await benchInterleaved(
             db,
             config.durationSec,
+            config.readSeedCount,
             cancelledRef,
           );
           if (cancelledRef.current) break;

@@ -62,8 +62,11 @@ export const createEmptyWatchMetrics = (): WatchMetrics => ({
 // ============================================================================
 
 interface MetricsActionsState {
-  // Private state for mutation timestamp (not reactive)
-  _lastMutationTimestamp: number | null;
+  // Per-watch mutation timestamps — each watch gets its own timestamp
+  // so latency is measured independently per watch strategy
+  _mutationTimestamps: Map<string, number>;
+  // Set of registered watch IDs for broadcasting mutation times
+  _registeredWatches: Set<string>;
 
   // Actions
   incrementWrites: () => void;
@@ -72,14 +75,18 @@ interface MetricsActionsState {
   updateWatchMetrics: (watchId: string, updater: (metrics: WatchMetrics) => WatchMetrics) => void;
   resetAllMetrics: () => void;
   resetWatchMetrics: (watchId: string) => void;
+  registerWatch: (watchId: string) => void;
+  unregisterWatch: (watchId: string) => void;
   recordMutationTime: () => void;
-  getLastMutationTimestamp: () => number | null;
+  getLastMutationTimestamp: (watchId: string) => number | null;
+  consumeMutationTimestamp: (watchId: string) => number | null;
 }
 
 // This store holds actions and the mutation timestamp.
 // Components using only actions won't re-render when metrics change.
 export const useMetricsActions = create<MetricsActionsState>((set, get) => ({
-  _lastMutationTimestamp: null,
+  _mutationTimestamps: new Map(),
+  _registeredWatches: new Set(),
 
   incrementWrites: () => {
     useMetricsState.setState((state) => ({
@@ -115,7 +122,7 @@ export const useMetricsActions = create<MetricsActionsState>((set, get) => ({
   },
 
   resetAllMetrics: () => {
-    set({ _lastMutationTimestamp: null });
+    set({ _mutationTimestamps: new Map() });
     useMetricsState.setState({
       totalWrites: 0,
       totalQueries: 0,
@@ -131,12 +138,47 @@ export const useMetricsActions = create<MetricsActionsState>((set, get) => ({
     });
   },
 
-  recordMutationTime: () => {
-    set({ _lastMutationTimestamp: performance.now() });
+  registerWatch: (watchId: string) => {
+    const watches = new Set(get()._registeredWatches);
+    watches.add(watchId);
+    set({ _registeredWatches: watches });
   },
 
-  getLastMutationTimestamp: (): number | null => {
-    return get()._lastMutationTimestamp;
+  unregisterWatch: (watchId: string) => {
+    const watches = new Set(get()._registeredWatches);
+    watches.delete(watchId);
+    const timestamps = new Map(get()._mutationTimestamps);
+    timestamps.delete(watchId);
+    set({ _registeredWatches: watches, _mutationTimestamps: timestamps });
+  },
+
+  recordMutationTime: () => {
+    const now = performance.now();
+    const watches = get()._registeredWatches;
+    const timestamps = new Map(get()._mutationTimestamps);
+    // Record this mutation time for every registered watch
+    for (const watchId of watches) {
+      // Only set if not already set — preserve the earliest unprocessed mutation
+      if (!timestamps.has(watchId)) {
+        timestamps.set(watchId, now);
+      }
+    }
+    set({ _mutationTimestamps: timestamps });
+  },
+
+  getLastMutationTimestamp: (watchId: string): number | null => {
+    return get()._mutationTimestamps.get(watchId) ?? null;
+  },
+
+  consumeMutationTimestamp: (watchId: string): number | null => {
+    const timestamps = get()._mutationTimestamps;
+    const ts = timestamps.get(watchId) ?? null;
+    if (ts !== null) {
+      const newTimestamps = new Map(timestamps);
+      newTimestamps.delete(watchId);
+      set({ _mutationTimestamps: newTimestamps });
+    }
+    return ts;
   },
 }));
 
@@ -200,7 +242,7 @@ export interface WatchMetricsAPI {
  * This does NOT cause re-renders - it only provides mutation functions.
  */
 export function createWatchMetricsAPI(watchId: string, renderCountRef: { current: number }): WatchMetricsAPI {
-  const { updateWatchMetrics, resetWatchMetrics, getLastMutationTimestamp } = useMetricsActions.getState();
+  const { updateWatchMetrics, resetWatchMetrics, consumeMutationTimestamp } = useMetricsActions.getState();
 
   return {
     recordQuery: () => {
@@ -252,7 +294,7 @@ export function createWatchMetricsAPI(watchId: string, renderCountRef: { current
     },
 
     recordLatency: () => {
-      const mutationTime = getLastMutationTimestamp();
+      const mutationTime = consumeMutationTimestamp(watchId);
       if (mutationTime === null) return;
 
       const latency = performance.now() - mutationTime;

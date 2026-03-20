@@ -5,7 +5,12 @@ import { type VFSInstance } from "./useVfsDatabases";
 // Isolated list_id so benchmark rows never appear in watch query columns
 const BENCH_LIST_ID = "00000000-0000-bench-0000-000000000000";
 
-export type BenchmarkPhase = "warmup" | "single-writes" | "tx-writes" | "reads" | "concurrency";
+export type BenchmarkPhase =
+  | "warmup"
+  | "single-writes"
+  | "tx-writes"
+  | "reads"
+  | "concurrency";
 export type BenchmarkStatus = "idle" | "running" | "done" | "error";
 
 export const WRITE_PRESSURE_PRESETS = [0, 1, 2, 5] as const;
@@ -66,14 +71,25 @@ export interface BenchmarkInstanceState {
   error?: Error;
 }
 
-function computePerOpStats(latencies: number[], totalMs: number): Omit<PhaseResult, "opsCount"> {
+function computePerOpStats(
+  latencies: number[],
+  totalMs: number,
+): Omit<PhaseResult, "opsCount"> {
   const n = latencies.length;
   if (n === 0) {
-    return { totalMs, rowsPerSec: 0, min: null, median: null, p95: null, max: null };
+    return {
+      totalMs,
+      rowsPerSec: 0,
+      min: null,
+      median: null,
+      p95: null,
+      max: null,
+    };
   }
   const sorted = [...latencies].sort((a, b) => a - b);
   const mid = Math.floor(n / 2);
-  const median = n % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+  const median =
+    n % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
   return {
     totalMs,
     rowsPerSec: n / (totalMs / 1000),
@@ -101,7 +117,10 @@ async function warmup(db: PowerSyncDatabase): Promise<void> {
   await db.execute(`DELETE FROM todos WHERE list_id = ?`, [BENCH_LIST_ID]);
 }
 
-async function benchSingleWrites(db: PowerSyncDatabase, n: number): Promise<PhaseResult> {
+async function benchSingleWrites(
+  db: PowerSyncDatabase,
+  n: number,
+): Promise<PhaseResult> {
   await db.execute(`DELETE FROM todos WHERE list_id = ?`, [BENCH_LIST_ID]);
   const latencies: number[] = [];
   const start = performance.now();
@@ -117,7 +136,10 @@ async function benchSingleWrites(db: PowerSyncDatabase, n: number): Promise<Phas
   return { ...stats, opsCount: n };
 }
 
-async function benchTxWrites(db: PowerSyncDatabase, n: number): Promise<PhaseResult> {
+async function benchTxWrites(
+  db: PowerSyncDatabase,
+  n: number,
+): Promise<PhaseResult> {
   await db.execute(`DELETE FROM todos WHERE list_id = ?`, [BENCH_LIST_ID]);
   const start = performance.now();
   await db.writeTransaction(async (tx) => {
@@ -129,7 +151,15 @@ async function benchTxWrites(db: PowerSyncDatabase, n: number): Promise<PhaseRes
     }
   });
   const totalMs = performance.now() - start;
-  return { totalMs, rowsPerSec: n / (totalMs / 1000), opsCount: n, min: null, median: null, p95: null, max: null };
+  return {
+    totalMs,
+    rowsPerSec: n / (totalMs / 1000),
+    opsCount: n,
+    min: null,
+    median: null,
+    p95: null,
+    max: null,
+  };
 }
 
 async function benchReads(db: PowerSyncDatabase, n: number): Promise<PhaseResult> {
@@ -210,7 +240,12 @@ async function benchConcurrency(db: PowerSyncDatabase, concurrentReads: number, 
     readsCompleted: nr,
     readRowsPerSec: nr / (totalMs / 1000),
     readMin: nr > 0 ? sorted[0] : null,
-    readMedian: nr > 0 ? (nr % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]) : null,
+    readMedian:
+      nr > 0
+        ? nr % 2 === 0
+          ? (sorted[mid - 1] + sorted[mid]) / 2
+          : sorted[mid]
+        : null,
     readP95: nr > 0 ? sorted[Math.min(Math.floor(nr * 0.95), nr - 1)] : null,
     readMax: nr > 0 ? sorted[nr - 1] : null,
     writesCompleted,
@@ -221,15 +256,25 @@ async function benchConcurrency(db: PowerSyncDatabase, concurrentReads: number, 
 }
 
 export function useVfsBenchmark() {
-  const [states, setStates] = useState<Map<string, BenchmarkInstanceState>>(new Map());
+  const [states, setStates] = useState<Map<string, BenchmarkInstanceState>>(
+    new Map(),
+  );
   const [isRunning, setIsRunning] = useState(false);
   const cancelledRef = useRef(false);
 
-  const patchState = (vfsId: string, patch: Partial<BenchmarkInstanceState>) => {
+  const patchState = (
+    vfsId: string,
+    patch: Partial<BenchmarkInstanceState>,
+  ) => {
     if (cancelledRef.current) return;
     setStates((prev) => {
       const next = new Map(prev);
-      const cur = next.get(vfsId) ?? { vfsId, status: "idle" as const, phase: null, result: null };
+      const cur = next.get(vfsId) ?? {
+        vfsId,
+        status: "idle" as const,
+        phase: null,
+        result: null,
+      };
       next.set(vfsId, { ...cur, ...patch });
       return next;
     });

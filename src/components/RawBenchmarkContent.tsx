@@ -184,7 +184,7 @@ export function RawBenchmarkContent({
             </dd>
             <dt>Phase Isolation</dt>
             <dd>
-              Each phase cleans up its data before and after. A 200ms settle
+              Each phase cleans up its data before and after. A 500ms settle
               pause between phases allows GC and pending microtasks to complete.
             </dd>
           </dl>
@@ -275,7 +275,7 @@ export function RawBenchmarkContent({
         >
           <div className="bench-modal" onClick={(e) => e.stopPropagation()}>
             <div className="bench-modal-header">
-              <h2>VFS Comparison — Min &amp; p95 Latency</h2>
+              <h2>VFS Comparison — Latency &amp; Throughput</h2>
               <button onClick={() => setShowCompareChart(false)}>✕</button>
             </div>
             <VfsBenchmarkCompareChart

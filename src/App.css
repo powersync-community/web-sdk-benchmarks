@@ -647,17 +647,6 @@ code {
   font-style: italic;
 }
 
-/* Run metadata banner */
-.bench-run-meta {
-  display: flex;
-  gap: 6px;
-  font-size: 10px;
-  color: #666;
-  padding: 4px 0 8px;
-  border-bottom: 1px solid #333;
-  margin-bottom: 4px;
-}
-
 /* Concurrency sub-groups */
 .bench-phase-subgroup {
   margin-top: 6px;
@@ -867,7 +856,7 @@ code {
   border: 1px solid #444;
   border-radius: 6px;
   padding: 20px;
-  width: min(700px, 90vw);
+  width: min(800px, 90vw);
 }
 
 .bench-modal-header {
@@ -897,8 +886,41 @@ code {
   background: transparent;
 }
 
-.bench-compare-chart {
-  height: 260px;
+.bench-compare-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.bench-chart-section {
+  border-bottom: 1px solid #333;
+  padding-bottom: 20px;
+}
+
+.bench-chart-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.bench-chart-title {
+  margin: 0 0 2px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.87);
+}
+
+.bench-chart-desc {
+  margin: 0 0 10px 0;
+  font-size: 11px;
+  color: #888;
+  line-height: 1.4;
+}
+
+.bench-chart-area {
+  position: relative;
 }
 
 /* ============================================================================

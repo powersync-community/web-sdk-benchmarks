@@ -11,17 +11,17 @@ import { VfsBenchmarkLineChart } from "./VfsBenchmarkLineChart";
 interface BenchmarkResultCardProps {
   instance: VFSInstance;
   state: BenchmarkInstanceState | undefined;
-  n: number;
 }
 
 const PHASE_LABELS: Record<BenchmarkPhase, string> = {
+  warmup: "Warmup",
   "single-writes": "Single Writes",
   "tx-writes": "Transaction Writes",
   reads: "Reads",
   concurrency: "Read Under Write Pressure",
 };
 
-export function BenchmarkResultCard({ instance, state, n }: BenchmarkResultCardProps) {
+export function BenchmarkResultCard({ instance, state }: BenchmarkResultCardProps) {
   const [showChartModal, setShowChartModal] = useState(false);
 
   if (instance.status !== "ready") {
@@ -58,10 +58,19 @@ export function BenchmarkResultCard({ instance, state, n }: BenchmarkResultCardP
 
       {state?.status === "done" && state.result && (
         <div className="bench-results">
-          <PhaseSection label="Single Writes" result={state.result.singleWrites} n={n} />
-          <PhaseSection label="Transaction Writes" result={state.result.txWrites} n={n} isTx />
-          <PhaseSection label="Reads" result={state.result.reads} n={n} />
-          <ConcurrencySection result={state.result.concurrency} n={n} />
+          {/* Run metadata */}
+          <div className="bench-run-meta">
+            <span>Sequential</span>
+            <span>·</span>
+            <span>{state.result.config.ops} ops</span>
+            <span>·</span>
+            <span>Write pressure {state.result.config.writePressure}×</span>
+          </div>
+
+          <PhaseSection label="Single Writes" result={state.result.singleWrites} />
+          <PhaseSection label="Transaction Writes" result={state.result.txWrites} isTx />
+          <PhaseSection label="Reads" result={state.result.reads} />
+          <ConcurrencySection result={state.result.concurrency} />
           <div className="bench-line-chart-row">
             <span className="bench-line-chart-label">Latency vs write pressure</span>
             {state.result.concurrency.readSnapshots.length > 0 && (
@@ -104,25 +113,23 @@ export function BenchmarkResultCard({ instance, state, n }: BenchmarkResultCardP
 function PhaseSection({
   label,
   result,
-  n,
   isTx = false,
 }: {
   label: string;
   result: PhaseResult;
-  n: number;
   isTx?: boolean;
 }) {
-  const fmt = (v: number | null, suffix = "ms") =>
-    v !== null ? `${v.toFixed(2)}${suffix}` : "—";
+  const fmt = (v: number | null) =>
+    v !== null ? `${v.toFixed(2)} ms` : "—";
 
   return (
     <div className="bench-phase">
       <div className="bench-phase-label">
-        {label} <span className="bench-n">({n} ops)</span>
+        {label} <span className="bench-n">({result.opsCount} ops)</span>
       </div>
       <div className="bench-phase-stats">
-        <BenchStat label="Total" value={`${result.totalMs.toFixed(0)}ms`} />
-        <BenchStat label="Ops/sec" value={Math.round(result.rowsPerSec).toLocaleString()} />
+        <BenchStat label="Total" value={`${result.totalMs.toFixed(0)} ms`} />
+        <BenchStat label="Throughput" value={`${Math.round(result.rowsPerSec).toLocaleString()} ops/s`} />
         {isTx ? (
           <BenchStat label="Per-op" value="single commit" dim />
         ) : (
@@ -138,21 +145,38 @@ function PhaseSection({
   );
 }
 
-function ConcurrencySection({ result, n }: { result: ConcurrencyResult; n: number }) {
-  const fmt = (v: number | null) => (v !== null ? `${v.toFixed(2)}ms` : "—");
+function ConcurrencySection({ result }: { result: ConcurrencyResult }) {
+  const fmt = (v: number | null) => (v !== null ? `${v.toFixed(2)} ms` : "—");
 
   return (
     <div className="bench-phase">
       <div className="bench-phase-label">
-        Read Under Write Pressure <span className="bench-n">({n} reads)</span>
+        Read Under Write Pressure <span className="bench-n">({result.readsCompleted} reads)</span>
       </div>
-      <div className="bench-phase-stats">
-        <BenchStat label="Read ops/sec" value={Math.round(result.readRowsPerSec).toLocaleString()} />
-        <BenchStat label="Write pressure" value={`${Math.round(result.writeRowsPerSec).toLocaleString()}/s`} />
-        <BenchStat label="Min" value={fmt(result.readMin)} />
-        <BenchStat label="Median" value={fmt(result.readMedian)} />
-        <BenchStat label="p95" value={fmt(result.readP95)} />
-        <BenchStat label="Max" value={fmt(result.readMax)} />
+
+      {/* Read Performance */}
+      <div className="bench-phase-subgroup">
+        <span className="bench-subgroup-label">Read Performance</span>
+        <div className="bench-phase-stats">
+          <BenchStat label="Throughput" value={`${Math.round(result.readRowsPerSec).toLocaleString()} ops/s`} />
+          <BenchStat label="Min" value={fmt(result.readMin)} />
+          <BenchStat label="Median" value={fmt(result.readMedian)} />
+          <BenchStat label="p95" value={fmt(result.readP95)} />
+          <BenchStat label="Max" value={fmt(result.readMax)} />
+        </div>
+      </div>
+
+      {/* Write Context */}
+      <div className="bench-phase-subgroup">
+        <span className="bench-subgroup-label">Write Context</span>
+        <div className="bench-phase-stats">
+          <BenchStat
+            label="Writes"
+            value={`${result.writesCompleted.toLocaleString()}${result.writesCapped ? " (capped)" : ""}`}
+          />
+          <BenchStat label="Write rate" value={`${Math.round(result.writeRowsPerSec).toLocaleString()} ops/s`} />
+          <BenchStat label="Duration" value={`${result.totalMs.toFixed(0)} ms`} />
+        </div>
       </div>
     </div>
   );

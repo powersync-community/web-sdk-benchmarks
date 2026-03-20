@@ -647,6 +647,50 @@ code {
   font-style: italic;
 }
 
+/* Run metadata banner */
+.bench-run-meta {
+  display: flex;
+  gap: 6px;
+  font-size: 10px;
+  color: #666;
+  padding: 4px 0 8px;
+  border-bottom: 1px solid #333;
+  margin-bottom: 4px;
+}
+
+/* Concurrency sub-groups */
+.bench-phase-subgroup {
+  margin-top: 6px;
+  padding-left: 8px;
+  border-left: 2px solid #333;
+}
+
+.bench-subgroup-label {
+  font-size: 10px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  display: block;
+}
+
+/* Advanced disclosure */
+.bench-advanced {
+  margin-bottom: 12px;
+}
+
+.bench-advanced-summary {
+  font-size: 11px;
+  color: #999;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 8px;
+}
+
+.bench-advanced-summary:hover {
+  color: #ccc;
+}
+
 /* Benchmark N input in sidebar */
 .bench-n-input {
   display: flex;
@@ -673,6 +717,61 @@ code {
 
 .bench-n-field:disabled {
   opacity: 0.5;
+}
+
+/* Segmented button row for write pressure */
+.bench-segmented-row {
+  display: flex;
+  gap: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.bench-segment {
+  flex: 1;
+  padding: 6px 12px;
+  border: none;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.bench-segment:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+
+.bench-segment:hover:not(:disabled) {
+  background: var(--bg-hover, rgba(255,255,255,0.08));
+}
+
+.bench-segment.active {
+  background: var(--accent, #3b82f6);
+  color: #fff;
+}
+
+.bench-segment:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bench-pressure-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.bench-pressure-custom .bench-n-field {
+  width: 80px;
+}
+
+.bench-pressure-suffix {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
 }
 
 /* Benchmark header row (title + icon button) */
@@ -801,3 +900,9 @@ code {
 .bench-compare-chart {
   height: 260px;
 }
+
+/* ============================================================================
+   Stress Test
+   ============================================================================ */
+
+

@@ -162,26 +162,48 @@ async function benchTxWrites(
   };
 }
 
-async function benchReads(db: PowerSyncDatabase, n: number): Promise<PhaseResult> {
-  // Read from rows left by benchTxWrites
-  const rows = await db.getAll<{ id: string }>(
-    `SELECT id FROM todos WHERE list_id = ? LIMIT ?`,
-    [BENCH_LIST_ID, n],
-  );
+/** Measures single-row primary-key lookup latency (not range scans or aggregations) */
+async function benchReads(
+  db: PowerSyncDatabase,
+  n: number,
+): Promise<PhaseResult> {
+  // Seed our own rows so this phase is self-contained
+  await db.execute(`DELETE FROM todos WHERE list_id = ?`, [BENCH_LIST_ID]);
+  const ids: string[] = [];
+  await db.writeTransaction(async (tx) => {
+    for (let i = 0; i < n; i++) {
+      const id = crypto.randomUUID();
+      ids.push(id);
+      await tx.execute(
+        `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
+        [id, `bench-read-${i}`, BENCH_LIST_ID, 0],
+      );
+    }
+  });
+
   const latencies: number[] = [];
   const start = performance.now();
-  for (const row of rows) {
+  for (const id of ids) {
     const t = performance.now();
-    await db.getOptional(`SELECT * FROM todos WHERE id = ?`, [row.id]);
+    await db.getOptional(`SELECT * FROM todos WHERE id = ?`, [id]);
     latencies.push(performance.now() - t);
   }
   const totalMs = performance.now() - start;
   await db.execute(`DELETE FROM todos WHERE list_id = ?`, [BENCH_LIST_ID]);
   const stats = computePerOpStats(latencies, totalMs);
-  return { ...stats, opsCount: rows.length };
+  return { ...stats, opsCount: ids.length };
 }
 
-async function benchConcurrency(db: PowerSyncDatabase, concurrentReads: number, concurrentWrites: number): Promise<ConcurrencyResult> {
+/**
+ * Interleaved read/write benchmark, not true concurrency.
+ * This measures how read latency degrades when writes
+ * are interleaved on the same event loop, not parallel I/O pressure.
+ */
+async function benchConcurrency(
+  db: PowerSyncDatabase,
+  concurrentReads: number,
+  concurrentWrites: number,
+): Promise<ConcurrencyResult> {
   // Seed a small fixed set of rows to read from — kept stable throughout the test
   const readIds: string[] = [];
   const seedCount = Math.min(50, concurrentReads);
@@ -280,56 +302,72 @@ export function useVfsBenchmark() {
     });
   };
 
-  const run = useCallback(async (instances: VFSInstance[], config: BenchmarkConfig) => {
-    cancelledRef.current = false;
-    setIsRunning(true);
+  const run = useCallback(
+    async (instances: VFSInstance[], config: BenchmarkConfig) => {
+      cancelledRef.current = false;
+      setIsRunning(true);
 
-    const initial = new Map<string, BenchmarkInstanceState>();
-    instances.forEach((i) =>
-      initial.set(i.config.id, { vfsId: i.config.id, status: "running", phase: "warmup", result: null }),
-    );
-    setStates(initial);
+      const initial = new Map<string, BenchmarkInstanceState>();
+      instances.forEach((i) =>
+        initial.set(i.config.id, {
+          vfsId: i.config.id,
+          status: "running",
+          phase: "warmup",
+          result: null,
+        }),
+      );
+      setStates(initial);
 
-    // Sequential execution — one VFS at a time to avoid interference
-    for (const instance of instances) {
-      if (cancelledRef.current) break;
-
-      try {
-        // Warmup phase
-        patchState(instance.config.id, { phase: "warmup" });
-        await warmup(instance.db);
+      // Sequential execution — one VFS at a time to avoid interference
+      for (const instance of instances) {
         if (cancelledRef.current) break;
 
-        const concurrentWrites = config.ops * config.writePressure;
+        try {
+          // Warmup phase
+          patchState(instance.config.id, { phase: "warmup" });
+          await warmup(instance.db);
+          if (cancelledRef.current) break;
 
-        patchState(instance.config.id, { phase: "single-writes" });
-        const singleWrites = await benchSingleWrites(instance.db, config.ops);
-        if (cancelledRef.current) break;
+          const concurrentWrites = config.ops * config.writePressure;
 
-        patchState(instance.config.id, { phase: "tx-writes" });
-        const txWrites = await benchTxWrites(instance.db, config.ops);
-        if (cancelledRef.current) break;
+          patchState(instance.config.id, { phase: "single-writes" });
+          const singleWrites = await benchSingleWrites(instance.db, config.ops);
+          if (cancelledRef.current) break;
 
-        patchState(instance.config.id, { phase: "reads" });
-        const reads = await benchReads(instance.db, config.ops);
-        if (cancelledRef.current) break;
+          patchState(instance.config.id, { phase: "tx-writes" });
+          const txWrites = await benchTxWrites(instance.db, config.ops);
+          if (cancelledRef.current) break;
 
-        patchState(instance.config.id, { phase: "concurrency" });
-        const concurrency = await benchConcurrency(instance.db, config.ops, concurrentWrites);
-        if (cancelledRef.current) break;
+          patchState(instance.config.id, { phase: "reads" });
+          const reads = await benchReads(instance.db, config.ops);
+          if (cancelledRef.current) break;
 
-        patchState(instance.config.id, {
-          status: "done",
-          phase: null,
-          result: { singleWrites, txWrites, reads, concurrency, config },
-        });
-      } catch (error) {
-        patchState(instance.config.id, { status: "error", phase: null, error: error as Error });
+          patchState(instance.config.id, { phase: "concurrency" });
+          const concurrency = await benchConcurrency(
+            instance.db,
+            config.ops,
+            concurrentWrites,
+          );
+          if (cancelledRef.current) break;
+
+          patchState(instance.config.id, {
+            status: "done",
+            phase: null,
+            result: { singleWrites, txWrites, reads, concurrency, config },
+          });
+        } catch (error) {
+          patchState(instance.config.id, {
+            status: "error",
+            phase: null,
+            error: error as Error,
+          });
+        }
       }
-    }
 
-    if (!cancelledRef.current) setIsRunning(false);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+      if (!cancelledRef.current) setIsRunning(false);
+    },
+    [],
+  ); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cancel = useCallback(() => {
     cancelledRef.current = true;

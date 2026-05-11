@@ -139,6 +139,8 @@ export function ControlPanel({
 
   return (
     <aside className="control-panel">
+      {extraControls}
+
       <div className="control-section">
         <h3>Test Scenarios</h3>
         <p className="section-description">
@@ -231,8 +233,6 @@ export function ControlPanel({
           </p>
         </div>
       </div>
-
-      {extraControls}
 
       <div className="control-section legend">
         <h3>Watch Types</h3>

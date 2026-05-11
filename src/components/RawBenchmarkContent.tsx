@@ -33,6 +33,7 @@ export function RawBenchmarkContent({
   return (
     <div className="app-container">
       <aside className="control-panel">
+        <VfsModePanel activeVfsIds={activeVfsIds} onToggle={onToggleVfs} />
         <div className="control-section">
           <h3>Benchmark Config</h3>
           <p className="section-description">
@@ -189,8 +190,6 @@ export function RawBenchmarkContent({
             </dd>
           </dl>
         </div>
-
-        <VfsModePanel activeVfsIds={activeVfsIds} onToggle={onToggleVfs} />
       </aside>
 
       <main className="main-content">

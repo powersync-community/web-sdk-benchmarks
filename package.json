@@ -10,10 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@journeyapps/wa-sqlite": "0.0.0-dev-20260226155430",
-    "@powersync/common": "0.0.0-dev-20260226160529",
-    "@powersync/react": "^1.7.3",
-    "@powersync/web": "0.0.0-dev-20260226160529",
+    "@journeyapps/wa-sqlite": "^1.7.0",
+    "@powersync/common": "^1.53.0",
+    "@powersync/react": "^1.10.0",
+    "@powersync/web": "^1.38.0",
     "chart.js": "^4.5.1",
     "react": "^19.1.1",
     "react-chartjs-2": "^5.3.1",

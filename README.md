@@ -2,7 +2,7 @@
 
 A React demo app that benchmarks PowerSync's watch query implementations and VFS storage backends side-by-side. Three modes let you explore different dimensions of performance.
 
-> All source was written with AI assistance. 
+> All sources were written with AI assistance. 
 
 ## Modes
 
@@ -106,7 +106,7 @@ src/
 
 ## Technical Notes
 
-**VFS DB lifecycle** — VFS databases are initialised once when entering either VFS mode and kept alive while switching between VFS Comparison and Raw Benchmark. Switching back to Watch Query mode disposes all four instances.
+**VFS DB lifecycle** — VFS databases are initialized once when entering either VFS mode and kept alive while switching between VFS Comparison and Raw Benchmark. Switching back to Watch Query mode disposes all four instances.
 
 **Metrics store split** — `useMetricsActions` is intentionally non-reactive so components that only record metrics never re-render. Only `useWatchMetricsState(watchId)` and `useGlobalTotals()` trigger re-renders.
 

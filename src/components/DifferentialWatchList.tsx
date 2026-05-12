@@ -3,12 +3,16 @@ import { usePowerSync } from "@powersync/react";
 import { useWatchMetrics } from "../hooks/useWatchMetrics";
 import { TodoListMetrics } from "./TodoListMetrics";
 import { MemoizedTodoItem } from "./TodoItem";
+import { getTodosWatchSql, type DataModel } from "../schemas";
 
 interface Todo {
   id: string;
   description: string;
   completed: number;
   list_id: string;
+  assignee_name?: string;
+  list_name?: string;
+  tag_names?: string;
 }
 
 interface DifferentialWatchListProps {
@@ -16,6 +20,7 @@ interface DifferentialWatchListProps {
   throttleMs: number;
   watchId?: string;
   title?: string;
+  model: DataModel;
 }
 
 /**
@@ -33,6 +38,7 @@ export function DifferentialWatchList({
   throttleMs,
   watchId = "differential-watch",
   title = "Differential Watch",
+  model,
 }: DifferentialWatchListProps) {
   const db = usePowerSync();
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -43,7 +49,7 @@ export function DifferentialWatchList({
 
     const watchedQuery = db
       .query<Todo>({
-        sql: "SELECT * FROM todos WHERE list_id = ?",
+        sql: getTodosWatchSql(model),
         parameters: [listId],
       })
       .differentialWatch({
@@ -75,9 +81,13 @@ export function DifferentialWatchList({
 
     return () => {
       dispose();
+      // Close the underlying watch — without this the WatchedQuery keeps its
+      // db.onChangeWithCallback registration alive after unmount, leaking
+      // queries on each table update across remaining renders.
+      watchedQuery.close().catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [db, listId, throttleMs]);
+  }, [db, listId, throttleMs, model]);
 
   // Track render count when todos change
   useEffect(() => {

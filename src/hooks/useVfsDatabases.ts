@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { PowerSyncDatabase, WASQLiteOpenFactory } from "@powersync/web";
-import { VFS_CONFIGS, type VFSConfig } from "../vfsConfig";
-import { schema, initPowerSync } from "../powersync";
+import { VFS_CONFIGS, vfsDbFilename, type VFSConfig } from "../vfsConfig";
+import { initPowerSync } from "../powersync";
+import { getSchema, type DataModel } from "../schemas";
 import { setupMetricsTracking } from "../utils/metricsWrapper";
 import { useMetricsActions } from "../stores/metricsStore";
 
@@ -20,7 +21,10 @@ interface VFSDatabasesResult {
   anyError: boolean;
 }
 
-export function useVfsDatabases(enabled: boolean): VFSDatabasesResult {
+export function useVfsDatabases(
+  enabled: boolean,
+  model: DataModel,
+): VFSDatabasesResult {
   const { incrementWrites, recordMutationTime } = useMetricsActions();
   const [instances, setInstances] = useState<VFSInstance[]>([]);
   // Keep refs for cleanup across re-renders
@@ -32,13 +36,17 @@ export function useVfsDatabases(enabled: boolean): VFSDatabasesResult {
       return;
     }
 
-    // Create all DB instances immediately
+    const schema = getSchema(model);
+
+    // Create all DB instances immediately. Filenames are per-model so the
+    // schema swap opens a fresh file instead of migrating in place (which
+    // trips wa-sqlite's strict-WAL check inside `replace_schema`).
     const newInstances: VFSInstance[] = VFS_CONFIGS.map((config) => ({
       config,
       db: new PowerSyncDatabase({
         schema,
         database: new WASQLiteOpenFactory({
-          dbFilename: config.dbFilename,
+          dbFilename: vfsDbFilename(config, model),
           vfs: config.vfs,
         }),
       }),
@@ -89,7 +97,7 @@ export function useVfsDatabases(enabled: boolean): VFSDatabasesResult {
       setInstances([]);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
+  }, [enabled, model]);
 
   const allReady =
     instances.length === VFS_CONFIGS.length &&

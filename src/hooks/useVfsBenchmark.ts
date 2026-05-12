@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback } from "react";
 import { PowerSyncDatabase, WASQLiteOpenFactory } from "@powersync/web";
 import { type VFSConfig } from "../vfsConfig";
-import { schema, initPowerSync } from "../powersync";
+import { initPowerSync } from "../powersync";
+import { simpleSchema } from "../schemas";
 
 // Isolated list_id so benchmark rows never appear in watch query columns
 const BENCH_LIST_ID = "00000000-0000-bench-0000-000000000000";
@@ -440,7 +441,7 @@ export function useVfsBenchmark() {
           // Create an isolated DB instance — only one worker + WASM instance alive at a time
           patchState(vfsCfg.id, { phase: "warmup", status: "running" });
           db = new PowerSyncDatabase({
-            schema,
+            schema: simpleSchema,
             database: new WASQLiteOpenFactory({
               dbFilename: vfsCfg.benchDbFilename,
               vfs: vfsCfg.vfs,
@@ -522,6 +523,19 @@ export function useVfsBenchmark() {
   const cancel = useCallback(() => {
     cancelledRef.current = true;
     setIsRunning(false);
+    // Clear spinners on any instance still mid-run — patchState ignores writes
+    // after cancellation, so reset them here directly.
+    setStates((prev) => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const [id, state] of prev) {
+        if (state.status === "running") {
+          next.set(id, { ...state, status: "idle", phase: null });
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
   }, []);
 
   return { states, isRunning, run, cancel };

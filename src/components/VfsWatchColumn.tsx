@@ -1,6 +1,7 @@
 import { PowerSyncContext } from "@powersync/react";
 import { type VFSInstance } from "../hooks/useVfsDatabases";
 import { type QueryType } from "../queryTypeConfig";
+import { type DataModel } from "../schemas";
 import { BasicWatchList } from "./BasicWatchList";
 import { IncrementalWatchList } from "./IncrementalWatchList";
 import { DifferentialWatchList } from "./DifferentialWatchList";
@@ -11,6 +12,7 @@ interface VfsWatchColumnProps {
   listId: string;
   throttleMs: number;
   queryType: QueryType;
+  model: DataModel;
 }
 
 interface WatchProps {
@@ -18,6 +20,7 @@ interface WatchProps {
   throttleMs: number;
   watchId: string;
   title: string;
+  model: DataModel;
 }
 
 function WatchForType({ queryType, ...props }: WatchProps & { queryType: QueryType }) {
@@ -38,6 +41,7 @@ export function VfsWatchColumn({
   listId,
   throttleMs,
   queryType,
+  model,
 }: VfsWatchColumnProps) {
   const watchId = `vfs-${instance.config.id}`;
   const { status, config, db, error } = instance;
@@ -75,6 +79,7 @@ export function VfsWatchColumn({
         throttleMs={throttleMs}
         watchId={watchId}
         title={config.label}
+        model={model}
       />
     </PowerSyncContext>
   );

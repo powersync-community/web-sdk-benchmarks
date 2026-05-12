@@ -7,6 +7,11 @@ interface Todo {
   description: string;
   completed: number;
   list_id: string;
+  // Complex-mode JOIN fields (optional)
+  assignee_name?: string;
+  list_name?: string;
+  /** GROUP_CONCAT(tag.name ORDER BY tag.name) — comma-separated string */
+  tag_names?: string;
 }
 
 interface TodoItemProps {
@@ -14,6 +19,26 @@ interface TodoItemProps {
   isNew?: boolean;
   isUpdated?: boolean;
   onRender?: () => void;
+}
+
+function TodoMeta({ todo }: { todo: Todo }) {
+  const hasAssignee = !!todo.assignee_name;
+  const hasList = !!todo.list_name;
+  const tags = todo.tag_names ? todo.tag_names.split(",").filter(Boolean) : [];
+  if (!hasAssignee && !hasList && tags.length === 0) return null;
+  return (
+    <span className="todo-meta">
+      {hasAssignee && (
+        <span className="assignee-chip">@{todo.assignee_name}</span>
+      )}
+      {tags.map((t) => (
+        <span key={t} className="tag-pill">
+          {t}
+        </span>
+      ))}
+      {hasList && <span className="list-name">{todo.list_name}</span>}
+    </span>
+  );
 }
 
 /**
@@ -51,6 +76,7 @@ export function BasicTodoItem({ todo, onRender }: TodoItemProps) {
       >
         {todo.description}
       </span>
+      <TodoMeta todo={todo} />
     </li>
   );
 }
@@ -96,6 +122,7 @@ const TodoItemComponent = ({
       >
         {todo.description}
       </span>
+      <TodoMeta todo={todo} />
       {isNew && <span className="badge new">New</span>}
       {isUpdated && <span className="badge updated">Updated</span>}
     </li>

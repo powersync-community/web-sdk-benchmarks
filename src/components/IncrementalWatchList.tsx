@@ -3,12 +3,16 @@ import { useQuery } from "@powersync/react";
 import { useWatchMetrics } from "../hooks/useWatchMetrics";
 import { TodoListMetrics } from "./TodoListMetrics";
 import { MemoizedTodoItem } from "./TodoItem";
+import { getTodosWatchSql, type DataModel } from "../schemas";
 
 interface Todo {
   id: string;
   description: string;
   completed: number;
   list_id: string;
+  assignee_name?: string;
+  list_name?: string;
+  tag_names?: string;
 }
 
 interface IncrementalWatchListProps {
@@ -16,6 +20,7 @@ interface IncrementalWatchListProps {
   throttleMs: number;
   watchId?: string;
   title?: string;
+  model: DataModel;
 }
 
 /**
@@ -32,11 +37,12 @@ export function IncrementalWatchList({
   throttleMs,
   watchId = "incremental-watch",
   title = "Incremental Watch",
+  model,
 }: IncrementalWatchListProps) {
   const metrics = useWatchMetrics(watchId);
 
   const { data: todos = [], isFetching } = useQuery<Todo>(
-    "SELECT * FROM todos WHERE list_id = ?",
+    getTodosWatchSql(model),
     [listId],
     {
       throttleMs,

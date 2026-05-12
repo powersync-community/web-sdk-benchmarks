@@ -1,6 +1,8 @@
 import { usePowerSync } from "@powersync/react";
 import { AbstractPowerSyncDatabase } from "@powersync/web";
 import { useMetricsActions } from "../stores/metricsStore";
+import { useDataModelStore } from "../stores/dataModelStore";
+import { type DataModel } from "../schemas";
 
 interface ControlPanelProps {
   listId: string;
@@ -9,6 +11,116 @@ interface ControlPanelProps {
   onToggleList: () => void;
   databases?: AbstractPowerSyncDatabase[];
   extraControls?: React.ReactNode;
+  model: DataModel;
+}
+
+const COMPLEX_USER_COUNT = 5;
+const COMPLEX_TAG_COUNT = 8;
+const AVATAR_COLORS = ["#f87171", "#fbbf24", "#34d399", "#60a5fa", "#a78bfa"];
+const TAG_COLORS = [
+  "#ef4444",
+  "#f97316",
+  "#eab308",
+  "#22c55e",
+  "#06b6d4",
+  "#3b82f6",
+  "#8b5cf6",
+  "#ec4899",
+];
+
+interface SeededComplexRefs {
+  userIds: string[];
+  tagIds: string[];
+}
+
+/**
+ * Ensure `n` users and `m` tags exist; reuse existing rows on repeat seeds so
+ * todos keep referencing valid IDs and we don't bloat the demo dataset.
+ */
+async function ensureUsersAndTags(
+  db: AbstractPowerSyncDatabase,
+): Promise<SeededComplexRefs> {
+  const existingUsers = await db.getAll<{ id: string }>(
+    `SELECT id FROM users LIMIT ?`,
+    [COMPLEX_USER_COUNT],
+  );
+  const existingTags = await db.getAll<{ id: string }>(
+    `SELECT id FROM tags LIMIT ?`,
+    [COMPLEX_TAG_COUNT],
+  );
+  const userIds = existingUsers.map((u) => u.id);
+  const tagIds = existingTags.map((t) => t.id);
+
+  await db.writeTransaction(async (tx) => {
+    for (let i = userIds.length; i < COMPLEX_USER_COUNT; i++) {
+      const id = crypto.randomUUID();
+      await tx.execute(
+        `INSERT INTO users (id, name, avatar_color) VALUES (?, ?, ?)`,
+        [id, `User ${i + 1}`, AVATAR_COLORS[i % AVATAR_COLORS.length]],
+      );
+      userIds.push(id);
+    }
+    for (let i = tagIds.length; i < COMPLEX_TAG_COUNT; i++) {
+      const id = crypto.randomUUID();
+      await tx.execute(`INSERT INTO tags (id, name, color) VALUES (?, ?, ?)`, [
+        id,
+        `tag-${i + 1}`,
+        TAG_COLORS[i % TAG_COLORS.length],
+      ]);
+      tagIds.push(id);
+    }
+  });
+
+  return { userIds, tagIds };
+}
+
+/**
+ * Seed N complex todos against `listId`. Each todo gets a random `assignee_id`
+ * and 0–3 tag links via `todo_tags`. Runs inside a single writeTransaction.
+ */
+async function seedComplexData(
+  db: AbstractPowerSyncDatabase,
+  listId: string,
+  n: number,
+): Promise<void> {
+  const { userIds, tagIds } = await ensureUsersAndTags(db);
+
+  // Make sure the list itself exists in the lists table so the JOIN
+  // produces non-empty list_name and complex JOINs match.
+  const existingList = await db.getOptional<{ id: string }>(
+    `SELECT id FROM lists WHERE id = ?`,
+    [listId],
+  );
+  if (!existingList) {
+    await db.execute(
+      `INSERT INTO lists (id, name, created_at, owner_id) VALUES (?, ?, ?, ?)`,
+      [
+        listId,
+        `List ${listId.slice(0, 8)}`,
+        new Date().toISOString(),
+        userIds[0] ?? null,
+      ],
+    );
+  }
+
+  await db.writeTransaction(async (tx) => {
+    for (let i = 0; i < n; i++) {
+      const todoId = crypto.randomUUID();
+      const assigneeId = userIds[Math.floor(Math.random() * userIds.length)];
+      await tx.execute(
+        `INSERT INTO todos (id, description, list_id, completed, assignee_id) VALUES (?, ?, ?, ?, ?)`,
+        [todoId, `Todo ${i + 1}`, listId, 0, assigneeId],
+      );
+      const tagCount = Math.floor(Math.random() * 4); // 0..3
+      const shuffled = [...tagIds].sort(() => Math.random() - 0.5);
+      for (let t = 0; t < tagCount; t++) {
+        await tx.execute(
+          `INSERT INTO todo_tags (id, todo_id, tag_id) VALUES (?, ?, ?)`,
+          [crypto.randomUUID(), todoId, shuffled[t]],
+        );
+      }
+    }
+  });
 }
 
 export function ControlPanel({
@@ -18,9 +130,11 @@ export function ControlPanel({
   onToggleList,
   databases,
   extraControls,
+  model,
 }: ControlPanelProps) {
   const contextDb = usePowerSync();
   const { resetAllMetrics } = useMetricsActions();
+  const setModel = useDataModelStore((s) => s.setModel);
   const activeDatabases =
     databases && databases.length > 0
       ? databases
@@ -31,8 +145,12 @@ export function ControlPanel({
   const seedData = async () => {
     if (activeDatabases.length === 0) return;
     await Promise.all(
-      activeDatabases.map((db) =>
-        db.writeTransaction(async (tx) => {
+      activeDatabases.map(async (db) => {
+        if (model === "complex") {
+          await seedComplexData(db, listId, 100);
+          return;
+        }
+        await db.writeTransaction(async (tx) => {
           for (let i = 0; i < 100; i++) {
             const id = crypto.randomUUID();
             await tx.execute(
@@ -40,16 +158,20 @@ export function ControlPanel({
               [id, `Todo ${i + 1}`, listId, 0],
             );
           }
-        }),
-      ),
+        });
+      }),
     );
   };
 
   const seedLargeDataset = async () => {
     if (activeDatabases.length === 0) return;
     await Promise.all(
-      activeDatabases.map((db) =>
-        db.writeTransaction(async (tx) => {
+      activeDatabases.map(async (db) => {
+        if (model === "complex") {
+          await seedComplexData(db, listId, 500);
+          return;
+        }
+        await db.writeTransaction(async (tx) => {
           for (let i = 0; i < 500; i++) {
             const id = crypto.randomUUID();
             await tx.execute(
@@ -57,14 +179,13 @@ export function ControlPanel({
               [id, `Large dataset todo ${i + 1}`, listId, 0],
             );
           }
-        }),
-      ),
+        });
+      }),
     );
   };
 
   const rapidUpdates = async () => {
     if (activeDatabases.length === 0) return;
-    // For rapid updates, broadcast per-DB independently (each has its own data)
     await Promise.all(
       activeDatabases.map(async (db) => {
         const todos = await db.getAll<{ id: string }>(
@@ -133,12 +254,72 @@ export function ControlPanel({
 
   const cleanData = async () => {
     if (activeDatabases.length === 0) return;
-    await Promise.all(activeDatabases.map((db) => db.execute(`DELETE FROM todos`)));
+    await Promise.all(
+      activeDatabases.map(async (db) => {
+        if (model === "complex") {
+          // FK-respecting order even though PowerSync doesn't enforce them — readable.
+          await db.execute(`DELETE FROM todo_tags`);
+          await db.execute(`DELETE FROM todos`);
+          await db.execute(`DELETE FROM tags`);
+          await db.execute(`DELETE FROM users`);
+          await db.execute(`DELETE FROM lists`);
+          return;
+        }
+        await db.execute(`DELETE FROM todos`);
+      }),
+    );
     resetAllMetrics();
   };
 
   return (
     <aside className="control-panel">
+      <div className="control-section">
+        <h3>Data Model</h3>
+        <p className="section-description">
+          Switches the PowerSync schema used by all watch and VFS columns. The
+          DB closes and re-opens with the new schema; existing tables stay on
+          disk as residual storage.
+        </p>
+        <div className="data-model-toggle" role="radiogroup">
+          <label className="data-model-option">
+            <span className="data-model-option-main">
+              <input
+                type="radio"
+                name="data-model"
+                value="simple"
+                checked={model === "simple"}
+                onChange={() => setModel("simple")}
+              />
+              <span>Simple</span>
+            </span>
+            <span className="data-model-hint">
+              <code>todos</code> + <code>lists</code>
+            </span>
+          </label>
+          <label className="data-model-option">
+            <span className="data-model-option-main">
+              <input
+                type="radio"
+                name="data-model"
+                value="complex"
+                checked={model === "complex"}
+                onChange={() => setModel("complex")}
+              />
+              <span>Complex</span>
+            </span>
+            <span className="data-model-hint">
+              5 tables, JOIN-heavy watch
+            </span>
+          </label>
+        </div>
+        <p className="setting-description">
+          Simple ↔ Complex timings are <strong>not</strong> directly
+          comparable — complex seeds write ~2.5× the rows and the watch
+          reactor is heavier. Compare <em>within</em> Complex across
+          strategies/VFS instead.
+        </p>
+      </div>
+
       {extraControls}
 
       <div className="control-section">
@@ -152,23 +333,27 @@ export function ControlPanel({
           <button onClick={seedData} className="control-button">
             <span className="button-label">Seed 100</span>
             <span className="button-description">
-              Creates 100 todos. Tests medium datasets - Incremental &amp;
-              Differential should prevent unnecessary emissions.
+              {model === "complex"
+                ? "Creates 100 todos with random assignees and 0–3 tags each. Also seeds ~5 users + ~8 tags on first run."
+                : "Creates 100 todos. Tests medium datasets - Incremental & Differential should prevent unnecessary emissions."}
             </span>
           </button>
 
           <button onClick={seedLargeDataset} className="control-button">
             <span className="button-label">Seed 500</span>
             <span className="button-description">
-              Creates 500 todos. Large dataset where Trigger-Based shines (O(1)
-              overhead vs O(n) for Differential).
+              {model === "complex"
+                ? "Creates 500 todos plus their tag links. Large dataset stress-tests the JOIN-heavy watch."
+                : "Creates 500 todos. Large dataset where Trigger-Based shines (O(1) overhead vs O(n) for Differential)."}
             </span>
           </button>
 
           <button onClick={cleanData} className="control-button danger">
             <span className="button-label">Clean Data</span>
             <span className="button-description">
-              Deletes all todos. All watches emit with empty results.
+              {model === "complex"
+                ? "Deletes todo_tags → todos → tags → users → lists. All watches emit with empty results."
+                : "Deletes all todos. All watches emit with empty results."}
             </span>
           </button>
         </div>
@@ -247,7 +432,11 @@ export function ControlPanel({
           <dd>Preserves object references for unchanged rows</dd>
 
           <dt>Trigger-Based</dt>
-          <dd>Records changes at write time (O(writes) vs O(result set))</dd>
+          <dd>
+            {model === "complex"
+              ? "Triggered re-execution of the JOIN over affected rows. The O(writes) framing only applies in Simple mode."
+              : "Records changes at write time (O(writes) vs O(result set))"}
+          </dd>
         </dl>
       </div>
     </aside>

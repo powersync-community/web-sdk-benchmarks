@@ -928,3 +928,90 @@ code {
    ============================================================================ */
 
 
+/* ============================================================================
+   Data Model Toggle
+   ============================================================================ */
+
+.data-model-toggle {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.data-model-option {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 10px;
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.87);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.data-model-option:hover {
+  border-color: #4f8;
+}
+
+.data-model-option-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.data-model-option input[type="radio"]:checked + span {
+  font-weight: 600;
+}
+
+.data-model-option:has(input:checked) {
+  background: #1f2f1f;
+  border-color: #4f8;
+}
+
+.data-model-hint {
+  font-size: 10px;
+  color: #888;
+}
+
+.data-model-hint code {
+  font-size: 10px;
+}
+
+/* Complex-mode meta strip rendered above row content */
+.todo-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 8px;
+  align-items: center;
+}
+
+.todo-meta .assignee-chip {
+  font-size: 10px;
+  color: #ccc;
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.todo-meta .tag-pill {
+  font-size: 10px;
+  color: #ccc;
+  background: #1e2a3a;
+  border: 1px solid #2a3a4a;
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.todo-meta .list-name {
+  font-size: 10px;
+  color: #888;
+  font-style: italic;
+}
+

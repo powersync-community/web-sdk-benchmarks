@@ -1,13 +1,23 @@
 import { WASQLiteVFS } from "@powersync/web";
+import type { DataModel } from "./schemas";
 
 export interface VFSConfig {
   id: string;
   label: string;
   vfs: WASQLiteVFS;
-  /** Filename used by the live VFS comparison view */
+  /** Filename used by the live VFS comparison view (per-model — see `vfsDbFilename`) */
   dbFilename: string;
   /** Separate filename used by the isolated benchmark runner */
   benchDbFilename: string;
+}
+
+/**
+ * VFS comparison filenames are namespaced per data model to sidestep the
+ * `replace_schema` IOERR on `OPFSWriteAheadVFS` when migrating in place.
+ * See `defaultDbFilename` in `powersync.ts` for context.
+ */
+export function vfsDbFilename(config: VFSConfig, model: DataModel): string {
+  return `${config.dbFilename.replace(/\.db$/, "")}-${model}.db`;
 }
 
 export const VFS_CONFIGS: VFSConfig[] = [

@@ -34,5 +34,12 @@
     "vite": "^7.1.2",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.5.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@journeyapps/wa-sqlite",
+      "@swc/core",
+      "esbuild"
+    ]
   }
 }

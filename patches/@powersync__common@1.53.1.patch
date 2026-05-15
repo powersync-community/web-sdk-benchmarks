@@ -1,0 +1,52 @@
+diff --git a/dist/bundle.cjs b/dist/bundle.cjs
+index 2fa27ec215f7816b68b031b565132d68244160b1..f64275528b1cbe8a5668e2382a2a226bff462fb6 100644
+--- a/dist/bundle.cjs
++++ b/dist/bundle.cjs
+@@ -12915,7 +12915,7 @@ class AbstractPowerSyncDatabase extends BaseObserver {
+             this.logger.warn('Schema validation failed. Unexpected behaviour could occur', ex);
+         }
+         this._schema = schema;
+-        await this.database.execute('SELECT powersync_replace_schema(?)', [JSON.stringify(this.schema.toJSON())]);
++        await this.database.writeTransaction((tx) => tx.execute('SELECT powersync_replace_schema(?)', [JSON.stringify(this.schema.toJSON())]));
+         await this.database.refreshSchema();
+         this.iterateListeners(async (cb) => cb.schemaChanged?.(schema));
+     }
+diff --git a/dist/bundle.mjs b/dist/bundle.mjs
+index c0b605ef0466ca5c15ac60312de5e0f8b0e8e664..b71ae36456d9a8654ec0081a0fd768aed5ca8c23 100644
+--- a/dist/bundle.mjs
++++ b/dist/bundle.mjs
+@@ -12913,7 +12913,7 @@ class AbstractPowerSyncDatabase extends BaseObserver {
+             this.logger.warn('Schema validation failed. Unexpected behaviour could occur', ex);
+         }
+         this._schema = schema;
+-        await this.database.execute('SELECT powersync_replace_schema(?)', [JSON.stringify(this.schema.toJSON())]);
++        await this.database.writeTransaction((tx) => tx.execute('SELECT powersync_replace_schema(?)', [JSON.stringify(this.schema.toJSON())]));
+         await this.database.refreshSchema();
+         this.iterateListeners(async (cb) => cb.schemaChanged?.(schema));
+     }
+diff --git a/dist/bundle.node.cjs b/dist/bundle.node.cjs
+index 819d2fa1d7a94dd0ba49fed8fea87fcc11a7fcad..93281bcd4942187088b01ac4ebe693bf47fa3172 100644
+--- a/dist/bundle.node.cjs
++++ b/dist/bundle.node.cjs
+@@ -10392,7 +10392,7 @@ class AbstractPowerSyncDatabase extends BaseObserver {
+             this.logger.warn('Schema validation failed. Unexpected behaviour could occur', ex);
+         }
+         this._schema = schema;
+-        await this.database.execute('SELECT powersync_replace_schema(?)', [JSON.stringify(this.schema.toJSON())]);
++        await this.database.writeTransaction((tx) => tx.execute('SELECT powersync_replace_schema(?)', [JSON.stringify(this.schema.toJSON())]));
+         await this.database.refreshSchema();
+         this.iterateListeners(async (cb) => cb.schemaChanged?.(schema));
+     }
+diff --git a/dist/bundle.node.mjs b/dist/bundle.node.mjs
+index 5d7c9c37ace548ac8fe2742a1ccc1cc5fe0f119b..0fcd6e58d6fdcd74fac07f6a813e611914e7b187 100644
+--- a/dist/bundle.node.mjs
++++ b/dist/bundle.node.mjs
+@@ -10390,7 +10390,7 @@ class AbstractPowerSyncDatabase extends BaseObserver {
+             this.logger.warn('Schema validation failed. Unexpected behaviour could occur', ex);
+         }
+         this._schema = schema;
+-        await this.database.execute('SELECT powersync_replace_schema(?)', [JSON.stringify(this.schema.toJSON())]);
++        await this.database.writeTransaction((tx) => tx.execute('SELECT powersync_replace_schema(?)', [JSON.stringify(this.schema.toJSON())]));
+         await this.database.refreshSchema();
+         this.iterateListeners(async (cb) => cb.schemaChanged?.(schema));
+     }

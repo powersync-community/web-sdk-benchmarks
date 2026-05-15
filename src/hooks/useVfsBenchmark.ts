@@ -1,5 +1,9 @@
 import { useState, useRef, useCallback } from "react";
-import { PowerSyncDatabase, WASQLiteOpenFactory } from "@powersync/web";
+import {
+  PowerSyncDatabase,
+  WASQLiteOpenFactory,
+  WASQLiteVFS,
+} from "@powersync/web";
 import { type VFSConfig } from "../vfsConfig";
 import { initPowerSync } from "../powersync";
 import { simpleSchema } from "../schemas";
@@ -9,6 +13,56 @@ const BENCH_LIST_ID = "00000000-0000-bench-0000-000000000000";
 
 /** Pause between phases to let GC / microtasks settle */
 const PHASE_SETTLE_MS = 500;
+
+/**
+ * Wipe persisted storage for a VFS's bench DB so each run starts from zero.
+ *
+ * Required for `OPFSWriteAheadVFS`: its strict-WAL check rejects the deferred
+ * write tx that PowerSync core's `powersync_replace_schema` issues on reopen,
+ * surfacing as `IOERR`. Applied to every VFS for consistent baselines.
+ *
+ * File layouts (keyed by `dbFileName`):
+ *   IDBBatchAtomicVFS    — IndexedDB database named `dbFileName`
+ *   OPFSCoopSyncVFS      — OPFS files: name, name-journal, name-wal
+ *   AccessHandlePoolVFS  — OPFS directory `dbFileName` (random-named children)
+ *   OPFSWriteAheadVFS    — OPFS files: name, name-wa0, name-wa1
+ */
+async function purgeVfsStorage(
+  vfs: WASQLiteVFS,
+  dbFilename: string,
+): Promise<void> {
+  if (vfs === WASQLiteVFS.IDBBatchAtomicVFS) {
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase(dbFilename);
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve(); // best-effort
+      req.onblocked = () => resolve();
+    });
+    return;
+  }
+
+  let root: FileSystemDirectoryHandle;
+  try {
+    root = await navigator.storage.getDirectory();
+  } catch {
+    return;
+  }
+
+  // Covers main file, suffixed siblings (-journal / -wal / -wa0 / -wa1), and
+  // the AccessHandlePool case where `dbFilename` is itself a directory.
+  const candidates = [
+    dbFilename,
+    `${dbFilename}-journal`,
+    `${dbFilename}-wal`,
+    `${dbFilename}-wa0`,
+    `${dbFilename}-wa1`,
+  ];
+  await Promise.all(
+    candidates.map((name) =>
+      root.removeEntry(name, { recursive: true }).catch(() => {}),
+    ),
+  );
+}
 
 export type BenchmarkPhase =
   | "warmup"
@@ -123,15 +177,19 @@ async function warmup(
 ): Promise<void> {
   await cleanup(db);
 
-  // Single writes (mirrors single-writes phase)
+  // Single writes (mirrors single-writes phase). We pre-generate IDs and use
+  // `db.execute` so the INSERT goes through `writeLock` — `db.get` routes via
+  // `readLock`, which on `OPFSWriteAheadVFS` can land on a reader connection
+  // opened SQLITE_OPEN_READONLY and fail with "attempt to write a readonly database".
   const singleIds: string[] = [];
   for (let i = 0; i < 50; i++) {
     if (cancelledRef.current) return;
-    const row = await db.get<{ id: string }>(
-      `INSERT INTO todos (id, description, list_id, completed) VALUES (uuid(), ?, ?, ?) RETURNING id`,
-      [`warmup-single-${i}`, BENCH_LIST_ID, 0],
+    const id = crypto.randomUUID();
+    await db.execute(
+      `INSERT INTO todos (id, description, list_id, completed) VALUES (?, ?, ?, ?)`,
+      [id, `warmup-single-${i}`, BENCH_LIST_ID, 0],
     );
-    singleIds.push(row.id);
+    singleIds.push(id);
   }
 
   // Transaction writes (mirrors tx-writes phase)
@@ -440,6 +498,11 @@ export function useVfsBenchmark() {
         try {
           // Create an isolated DB instance — only one worker + WASM instance alive at a time
           patchState(vfsCfg.id, { phase: "warmup", status: "running" });
+          // Wipe any leftover bench file before opening. OPFSWriteAheadVFS
+          // rejects the deferred-tx write that `powersync_replace_schema`
+          // issues on reopen (IOERR); starting fresh sidesteps it and also
+          // gives every VFS a clean baseline.
+          await purgeVfsStorage(vfsCfg.vfs, vfsCfg.benchDbFilename);
           db = new PowerSyncDatabase({
             schema: simpleSchema,
             database: new WASQLiteOpenFactory({

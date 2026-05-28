@@ -1,36 +1,43 @@
 import {
-  column,
-  Schema,
-  Table,
   PowerSyncDatabase,
   AbstractPowerSyncDatabase,
   WASQLiteVFS,
-  WASQLiteOpenFactory
+  WASQLiteOpenFactory,
 } from "@powersync/web";
-
-const schema = new Schema({
-  lists: new Table({
-    name: column.text,
-    created_at: column.text,
-    owner_id: column.text,
-  }),
-  todos: new Table({
-    description: column.text,
-    list_id: column.text,
-    completed: column.integer,
-  }),
-});
+import { getSchema, type DataModel } from "./schemas";
 
 const BACKEND_URL = "http://localhost:6060";
 const POWERSYNC_URL = "http://localhost:8080";
 
-export const powerSyncDatabase = new PowerSyncDatabase({
-  schema,
-  database: new WASQLiteOpenFactory({
-    dbFilename: 'exampleVFS.db',
-    vfs: WASQLiteVFS.OPFSWriteAheadVFS
-  }),
-});
+export const DEFAULT_VFS = WASQLiteVFS.OPFSWriteAheadVFS;
+
+/**
+ * Per-model DB filenames. PowerSync core's `replace_schema` does in-place
+ * schema migration that issues writes inside a deferred transaction, which
+ * wa-sqlite's `OPFSWriteAheadVFS` (1.5+) rejects with `IOERR`. Giving each
+ * schema its own file means swaps open a fresh DB instead of migrating,
+ * sidestepping the SDK bug.
+ */
+export function defaultDbFilename(model: DataModel): string {
+  return `exampleVFS-${model}.db`;
+}
+
+export interface CreateDatabaseOptions {
+  model: DataModel;
+  dbFilename?: string;
+  vfs?: WASQLiteVFS;
+}
+
+export function createDatabase({
+  model,
+  dbFilename = defaultDbFilename(model),
+  vfs = DEFAULT_VFS,
+}: CreateDatabaseOptions): PowerSyncDatabase {
+  return new PowerSyncDatabase({
+    schema: getSchema(model),
+    database: new WASQLiteOpenFactory({ dbFilename, vfs }),
+  });
+}
 
 export const connector = {
   async fetchCredentials() {
@@ -88,6 +95,6 @@ export async function initPowerSync(powerSyncDatabase: PowerSyncDatabase) {
   await powerSyncDatabase.init();
 
   // await powerSyncDatabase.waitForFirstSync();
-  
+
   console.log("PowerSync is ready");
 }

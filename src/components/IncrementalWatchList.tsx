@@ -3,17 +3,24 @@ import { useQuery } from "@powersync/react";
 import { useWatchMetrics } from "../hooks/useWatchMetrics";
 import { TodoListMetrics } from "./TodoListMetrics";
 import { MemoizedTodoItem } from "./TodoItem";
+import { getTodosWatchSql, type DataModel } from "../schemas";
 
 interface Todo {
   id: string;
   description: string;
   completed: number;
   list_id: string;
+  assignee_name?: string;
+  list_name?: string;
+  tag_names?: string;
 }
 
 interface IncrementalWatchListProps {
   listId: string;
   throttleMs: number;
+  watchId?: string;
+  title?: string;
+  model: DataModel;
 }
 
 /**
@@ -25,12 +32,17 @@ interface IncrementalWatchListProps {
  * - ⚠️ Still creates new array reference when emitting
  * - ⚠️ Child components still re-render (no memo benefit)
  */
-export function IncrementalWatchList({ listId, throttleMs }: IncrementalWatchListProps) {
-  const watchId = "incremental-watch";
+export function IncrementalWatchList({
+  listId,
+  throttleMs,
+  watchId = "incremental-watch",
+  title = "Incremental Watch",
+  model,
+}: IncrementalWatchListProps) {
   const metrics = useWatchMetrics(watchId);
 
   const { data: todos = [], isFetching } = useQuery<Todo>(
-    "SELECT * FROM todos WHERE list_id = ?",
+    getTodosWatchSql(model),
     [listId],
     {
       throttleMs,
@@ -78,7 +90,7 @@ export function IncrementalWatchList({ listId, throttleMs }: IncrementalWatchLis
           <li>Memo-optimized</li>
         </ul>
       </div>
-      <TodoListMetrics watchId={watchId} title="Incremental Watch" />
+      <TodoListMetrics watchId={watchId} title={title} />
       <ul className="todo-list">
         {todos.map((todo) => (
           <MemoizedTodoItem

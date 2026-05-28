@@ -1,5 +1,5 @@
-import { useRef, useMemo } from 'react';
-import { createWatchMetricsAPI, type WatchMetricsAPI } from '../stores/metricsStore';
+import { useRef, useMemo, useEffect } from 'react';
+import { createWatchMetricsAPI, useMetricsActions, type WatchMetricsAPI } from '../stores/metricsStore';
 
 /**
  * Hook that provides a stable API for recording metrics for a specific watch.
@@ -12,6 +12,13 @@ export function useWatchMetrics(watchId: string): WatchMetricsAPI {
 
   // Increment render count on each hook call
   renderCountRef.current++;
+
+  // Register this watch for per-watch mutation timestamp tracking
+  useEffect(() => {
+    const { registerWatch, unregisterWatch } = useMetricsActions.getState();
+    registerWatch(watchId);
+    return () => unregisterWatch(watchId);
+  }, [watchId]);
 
   // Create stable API object - only recreated if watchId changes
   const api = useMemo(

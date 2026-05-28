@@ -25,8 +25,8 @@ export default defineConfig({
     include: [],
   },
   plugins: [wasm(), react(), topLevelAwait()],
-  // worker: {
-  //   format: "es",
-  //   plugins: () => [wasm(), topLevelAwait()],
-  // },
+  worker: {
+    format: "es",
+    plugins: () => [wasm(), topLevelAwait()],
+  },
 });

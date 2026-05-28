@@ -35,7 +35,7 @@ Compares four watch query implementations against the same database, showing how
 | Basic | `useQuery()` | Re-runs on every table write; new array reference every time |
 | Incremental | `useQuery()` + `rowComparator` | Skips emission when results are unchanged |
 | Differential | `query.differentialWatch()` | Preserves object references for unchanged rows; `React.memo` prevents child re-renders |
-| Trigger-Based | `db.triggers.trackTableDiff()` | O(writes) overhead instead of O(result set); single table only |
+| Trigger-Based | `db.triggers.trackTableDiff()` | O(writes) overhead instead of O(result set) in Simple mode; in Complex mode it tracks five sources and re-runs the enrichment JOIN over affected IDs (see caveats) |
 
 **Recommended pattern for large datasets:** Differential + `MemoizedTodoItem`.
 
@@ -60,18 +60,18 @@ Each column has its own `PowerSyncDatabase` instance and independent metrics slo
 
 ### Raw VFS Benchmark
 
-Measures raw database operation latency for each VFS backend with no watch queries involved. Three phases run in parallel across all active backends:
+Measures raw database operation latency for each VFS backend with no watch queries involved. Backends run sequentially (order shuffled to mitigate position bias); each runs a warmup plus four measured phases, with every phase running for a fixed duration and reporting how much throughput it achieved:
 
 | Phase | What it measures |
 |-------|-----------------|
-| **Single Writes** | N individual inserts, one commit per row. Exposes per-commit VFS overhead. |
-| **Transaction Writes** | N inserts in a single `writeTransaction()`. One commit total — the best-case baseline. |
-| **Reads** | N primary-key lookups against the rows written in the transaction phase. |
-| **Read Under Write Pressure** | N reads while a background write loop runs at full speed simultaneously. The latency delta vs plain Reads shows how much the VFS serialises reads behind write commits. |
+| **Single Writes** | Individual inserts, one commit per row, for the configured duration. Exposes per-commit VFS overhead. |
+| **Transaction Writes** | Batched inserts (`txBatchSize` per `writeTransaction()`) for the configured duration. Per-transaction commit latency is captured. |
+| **Reads** | Primary-key lookups for the configured duration against a pool of pre-seeded rows. |
+| **Read Under Write Pressure** | Interleaved reads and writes for the configured duration. Both are serialised through the same Web Worker, so this shows how read latency degrades when writes compete for the worker, not true concurrent I/O. |
 
-Results show total time, ops/sec, and per-operation min / median / p95 / max. The gap between Single Writes and Transaction Writes is the key signal: a large gap means the VFS has expensive per-commit overhead and single writes should be avoided in hot paths.
+Results show total time, ops/sec, and per-operation min / median / p95 / max (transaction writes also report per-commit percentiles). The gap between Single Writes and Transaction Writes is the key signal: a large gap means the VFS has expensive per-commit overhead and single writes should be avoided in hot paths.
 
-The number of operations N is configurable (default 100). A **comparison chart** (bar chart icon in the header) overlays min and p95 latency for all active backends side-by-side across every phase.
+Configurable parameters: **Duration** (seconds per phase, default 5), **Transaction Batch Size** (default 500), and **Read Seed Rows** (default 1000). A **comparison chart** (bar chart icon in the header) overlays min and p95 latency for all active backends side-by-side across every phase.
 
 ## Getting Started
 

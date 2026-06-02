@@ -1,4 +1,4 @@
-# PowerSync Web Bench
+# PowerSync Web SDK Benchmarks
 
 A stand-alone React demo app that benchmarks PowerSync's watch query implementations and VFS storage options side-by-side, using the [@powersync/web](https://www.npmjs.com/package/@powersync/web) module. Three modes let you explore different dimensions of performance. Important note; this benchmarking tool does not connect to a PowerSync Service instance, everything runs locally. 
 

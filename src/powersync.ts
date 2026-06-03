@@ -9,7 +9,7 @@ import { getSchema, type DataModel } from "./schemas";
 const BACKEND_URL = "http://localhost:6060";
 const POWERSYNC_URL = "http://localhost:8080";
 
-export const DEFAULT_VFS = WASQLiteVFS.OPFSWriteAheadVFS;
+export const DEFAULT_VFS = WASQLiteVFS.OPFSCoopSyncVFS;
 
 /**
  * Per-model DB filenames. PowerSync core's `replace_schema` does in-place

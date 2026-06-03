@@ -21,8 +21,8 @@ This is a **React demo app** with three modes for benchmarking PowerSync perform
 
 | Mode | Purpose |
 |------|---------|
-| Watch Query Comparison | Four watch strategies against one DB; measures React rendering impact |
-| VFS Comparison | One watch strategy (selectable) against four VFS backends simultaneously |
+| OPFSCoopSync Comparison | Four watch strategies against one `OPFSCoopSyncVFS` DB; measures React rendering impact |
+| Watch Strategy Comparison | One watch strategy (selectable) against four VFS backends simultaneously |
 | Raw VFS Benchmark | Direct read/write latency benchmark — no watch queries |
 
 ### Watch Query Implementations
@@ -55,7 +55,7 @@ The control panel's **Simple / Complex** radio swaps the PowerSync schema via a 
 - **Inside `trackTableDiff` `onChange` callbacks, run reads on the supplied `context` via `context.withDiff(sql, params)`, never `db.getAll(...)`.** The SDK runs onChange inside a `writeTransaction`, which holds the writer lock. A fresh `db.*` call requests a new lock and deadlocks every single-worker VFS (idb-batch / opfs-coop / access-handle-pool). OPFSWriteAheadVFS hides the bug because its reader worker serves the conflicting read. The handler context types claim to extend `LockContext` (with `getAll`/`execute`/etc.), but at runtime it's built via `{ ...tx, withDiff, withExtractedDiff }` — only `withDiff`/`withExtractedDiff` survive the spread; the `tx` prototype methods don't. `withDiff` is the supported way to issue arbitrary reads on the same tx — its `WITH DIFF AS (...) ${query}` wrapper is harmless when your query doesn't reference DIFF.
 - **Raw VFS Benchmark ignores the toggle** — it pins to `simpleSchema` (writes to `todos` only).
 
-All four accept optional `watchId?` and `title?` props so they can run as multiple simultaneous instances with independent metrics slots (used in VFS Comparison mode).
+All four accept optional `watchId?` and `title?` props so they can run as multiple simultaneous instances with independent metrics slots (used in Watch Strategy Comparison mode).
 
 `DifferentialWatchList` + `MemoizedTodoItem` is the optimal pattern for large datasets.
 
@@ -66,9 +66,9 @@ Defined in `src/vfsConfig.ts`. Each entry has an `id`, `label`, `vfs` enum value
 | ID | VFS | Storage |
 |----|-----|---------|
 | `idb-batch` | `IDBBatchAtomicVFS` | IndexedDB |
-| `opfs-coop` | `OPFSCoopSyncVFS` | OPFS |
+| `opfs-coop` | `OPFSCoopSyncVFS` | OPFS (default) |
 | `access-handle-pool` | `AccessHandlePoolVFS` | OPFS (access handles) |
-| `opfs-wal` | `OPFSWriteAheadVFS` | OPFS + WAL (default) |
+| `opfs-wal` | `OPFSWriteAheadVFS` | OPFS + WAL |
 
 ### Key Files
 
@@ -77,7 +77,7 @@ Defined in `src/vfsConfig.ts`. Each entry has an `id`, `label`, `vfs` enum value
 - `src/stores/dataModelStore.ts` — Zustand store with `localStorage` persistence for Simple/Complex
 - `src/vfsConfig.ts` — `VFS_CONFIGS` array; single source of truth for VFS metadata
 - `src/queryTypeConfig.ts` — `QUERY_TYPE_CONFIGS` + `QueryType` type
-- `src/App.tsx` — Root component; `PowerSyncContext` provider; mode state; `useVfsDatabases` lifted here so VFS DBs survive switching between VFS Comparison and Raw Benchmark
+- `src/App.tsx` — Root component; `PowerSyncContext` provider; mode state; `useVfsDatabases` lifted here so VFS DBs survive switching between Watch Strategy Comparison and Raw Benchmark
 - `src/stores/metricsStore.ts` — Zustand store with a deliberately split design:
   - `useMetricsActions` — stable mutation API, **non-reactive** (no re-renders)
   - `useMetricsState` / `useWatchMetricsState(watchId)` — reactive selectors
@@ -86,7 +86,7 @@ Defined in `src/vfsConfig.ts`. Each entry has an `id`, `label`, `vfs` enum value
 - `src/components/TodoListMetrics.tsx` — Per-watch latency (avg/last/low/median) and render metrics
 - `src/components/VfsWatchColumn.tsx` — Wraps a `VFSInstance` in its own `PowerSyncContext`; renders loading/error/ready states
 - `src/components/VfsModePanel.tsx` — Checkbox list for toggling VFS backends (min 1 required)
-- `src/components/VfsQueryTypePanel.tsx` — Radio selector for query type in VFS Comparison
+- `src/components/VfsQueryTypePanel.tsx` — Radio selector for query type in Watch Strategy Comparison
 - `src/components/RawBenchmarkContent.tsx` — Raw benchmark page layout
 - `src/components/BenchmarkResultCard.tsx` — Per-VFS benchmark results (single writes / tx writes / reads)
 - `src/hooks/useWatchMetrics.ts` — Creates per-watch stable metrics API
@@ -119,8 +119,8 @@ Benchmark rows use `list_id = "00000000-0000-bench-0000-000000000000"` so they n
 
 `useVfsDatabases(enabled, model)` is called at `App` level with `enabled = mode !== "watch-query"`. This means:
 - VFS DBs initialise once when entering either VFS mode
-- Switching between VFS Comparison and Raw Benchmark reuses the same open DB handles
-- Switching back to Watch Query mode disposes all four instances and cleans up metrics listeners
+- Switching between Watch Strategy Comparison and Raw Benchmark reuses the same open DB handles
+- Switching back to OPFSCoopSync Comparison mode disposes all four instances and cleans up metrics listeners
 - Toggling Simple ↔ Complex tears down all four instances and reopens them with the new schema. Metrics are reset on swap (mixed-schema counters are meaningless).
 
 The single watch-query DB in `AppContent` follows the same `useEffect([model])` pattern — `createDatabase({ model })` runs on every model change with the previous DB closed in cleanup.

@@ -54,13 +54,13 @@ function App() {
           className={`mode-toggle-button${mode === "watch-query" ? " active" : ""}`}
           onClick={() => setMode("watch-query")}
         >
-          Watch Query Comparison
+          OPFSCoopSync Comparison
         </button>
         <button
           className={`mode-toggle-button${mode === "vfs-comparison" ? " active" : ""}`}
           onClick={() => setMode("vfs-comparison")}
         >
-          VFS Comparison
+          Watch Strategy Comparison
         </button>
         <button
           className={`mode-toggle-button${mode === "raw-benchmark" ? " active" : ""}`}

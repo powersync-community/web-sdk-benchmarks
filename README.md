@@ -26,9 +26,9 @@ The control panel has a **Simple / Complex** radio that swaps the PowerSync sche
 
 ## Modes
 
-### Watch Query Comparison
+### OPFSCoopSync Comparison
 
-Compares four watch query implementations against the same database, showing how each strategy affects React rendering performance.
+Compares four watch query implementations against the same `OPFSCoopSyncVFS`-backed database, showing how each strategy affects React rendering performance.
 
 | Column | API | Behaviour |
 |--------|-----|-----------|
@@ -45,16 +45,16 @@ The **throttle slider** controls the trailing-edge debounce applied to all watch
 
 **Clean Data** resets both the database and all metric counters.
 
-### VFS Comparison
+### Watch Strategy Comparison
 
 Runs the same watch query strategy (selectable) against four different VFS backends simultaneously, so you can compare how storage choice affects watch query latency and render behaviour.
 
 | VFS | Storage |
 |-----|---------|
 | `IDBBatchAtomicVFS` | IndexedDB |
-| `OPFSCoopSyncVFS` | OPFS (cooperative sync) |
+| `OPFSCoopSyncVFS` | OPFS (cooperative sync, default) |
 | `AccessHandlePoolVFS` | OPFS (access handle pool) |
-| `OPFSWriteAheadVFS` | OPFS + WAL (default) |
+| `OPFSWriteAheadVFS` | OPFS + WAL |
 
 Each column has its own `PowerSyncDatabase` instance and independent metrics slot. Control panel writes are broadcast to all active VFS databases simultaneously.
 
@@ -128,7 +128,7 @@ src/
 
 ## Technical Notes
 
-**VFS DB lifecycle** — VFS databases are initialized once when entering either VFS mode and kept alive while switching between VFS Comparison and Raw Benchmark. Switching back to Watch Query mode disposes all four instances.
+**VFS DB lifecycle** — VFS databases are initialized once when entering either VFS mode and kept alive while switching between Watch Strategy Comparison and Raw Benchmark. Switching back to OPFSCoopSync Comparison mode disposes all four instances.
 
 **Metrics store split** — `useMetricsActions` is intentionally non-reactive so components that only record metrics never re-render. Only `useWatchMetricsState(watchId)` and `useGlobalTotals()` trigger re-renders.
 

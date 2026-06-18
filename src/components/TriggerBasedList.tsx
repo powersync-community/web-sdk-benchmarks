@@ -168,7 +168,14 @@ export function TriggerBasedList({
       // `withDiff` to run the enrichment join on the same writer tx; the
       // unused DIFF CTE is harmless.
       const refreshAffected = async (
-        ctx: { withDiff: <T>(query: string, params?: ReadonlyArray<unknown>) => Promise<T[]> },
+        // Narrowed to just `withDiff` on purpose: the runtime context is built
+        // via `{ ...tx, withDiff, withExtractedDiff }`, so only those survive the
+        // spread (getAll/execute/... would deadlock — see comment above). The SDK
+        // 1.53.x types withDiff's params as `ReadonlyArray<Readonly<any>>`, which
+        // rejects primitive bind params; `readonly any[]` bridges that while
+        // keeping the guardrail intact.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ctx: { withDiff: <T>(query: string, params?: readonly any[]) => Promise<T[]> },
         idsToRefresh: Iterable<string>,
         idsToDelete: Iterable<string>,
       ) => {

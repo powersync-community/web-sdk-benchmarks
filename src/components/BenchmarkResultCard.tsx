@@ -1,11 +1,28 @@
 import { useState } from "react";
 import { type VFSConfig } from "../vfsConfig";
 import {
+  type BenchmarkConfig,
   type BenchmarkInstanceState,
   type BenchmarkPhase,
   type PhaseResult,
   type InterleavedResult,
+  type CheckpointStats,
 } from "../hooks/useVfsBenchmark";
+
+/** Rough on-disk size per seeded todo row (Roy's figure: ~1000 rows ≈ 7.3 MB). */
+const APPROX_ROW_KIB = 7.5;
+
+/**
+ * Warn when SQLite's page cache is large enough to hold the entire read working
+ * set — in that case the read numbers reflect cached reads, not VFS I/O.
+ */
+function readCacheNote(config: BenchmarkConfig): string | null {
+  const workingSetKiB = config.readSeedCount * APPROX_ROW_KIB;
+  if (config.cacheSizeKb >= workingSetKiB) {
+    return "Working set fits in the page cache — reads are served from memory, not the VFS. Lower the cache size to measure VFS read I/O.";
+  }
+  return null;
+}
 import { VfsBenchmarkLineChart } from "./VfsBenchmarkLineChart";
 
 interface BenchmarkResultCardProps {
@@ -59,8 +76,16 @@ export function BenchmarkResultCard({
             result={state.result.txWrites}
             isTx
           />
-          <PhaseSection label="Reads" result={state.result.reads} />
-          <InterleavedSection result={state.result.interleaved} />
+          <PhaseSection
+            label="Reads"
+            result={state.result.reads}
+            note={readCacheNote(state.result.config)}
+          />
+          <InterleavedSection
+            result={state.result.interleaved}
+            vfsConfig={vfsConfig}
+          />
+          <CheckpointSection checkpoint={state.result.checkpoint} />
           <div className="bench-line-chart-row">
             <span className="bench-line-chart-label">
               Latency vs interleaved writes
@@ -139,10 +164,12 @@ function PhaseSection({
   label,
   result,
   isTx = false,
+  note,
 }: {
   label: string;
   result: PhaseResult;
   isTx?: boolean;
+  note?: string | null;
 }) {
   const fmt = (v: number | null) => (v !== null ? `${v.toFixed(2)} ms` : "—");
 
@@ -155,6 +182,7 @@ function PhaseSection({
           {isTx && result.txCount != null ? `, ${result.txCount} txns` : ""})
         </span>
       </div>
+      {note && <p className="bench-phase-note">⚠ {note}</p>}
       <div className="bench-phase-stats">
         <BenchStat
           label="Throughput"
@@ -180,15 +208,35 @@ function PhaseSection({
   );
 }
 
-function InterleavedSection({ result }: { result: InterleavedResult }) {
+function InterleavedSection({
+  result,
+  vfsConfig,
+}: {
+  result: InterleavedResult;
+  vfsConfig: VFSConfig;
+}) {
   const fmt = (v: number | null) => (v !== null ? `${v.toFixed(2)} ms` : "—");
+
+  // additionalReaders only applies to OPFSWriteAheadVFS. When the user asked for
+  // concurrent reads on any other backend, be explicit that they serialized.
+  const note =
+    result.readConcurrency > 1 && vfsConfig.id !== "opfs-wal"
+      ? `${result.readConcurrency} concurrent read loops requested, but this backend has a single connection — reads serialized through one worker (extra readers apply only to OPFSWriteAheadVFS).`
+      : null;
 
   return (
     <div className="bench-phase">
       <div className="bench-phase-label">
         Interleaved Read + Write{" "}
-        <span className="bench-n">({result.readsCompleted} reads)</span>
+        <span className="bench-n">
+          ({result.readsCompleted} reads
+          {result.readConcurrency > 1
+            ? `, ${result.readConcurrency}× concurrent`
+            : ""}
+          )
+        </span>
       </div>
+      {note && <p className="bench-phase-note">⚠ {note}</p>}
 
       {/* Read Performance */}
       <div className="bench-phase-subgroup">
@@ -223,6 +271,57 @@ function InterleavedSection({ result }: { result: InterleavedResult }) {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+const CHECKPOINT_MODE_LABELS: Record<CheckpointStats["mode"], string> = {
+  auto: "Auto (per-commit)",
+  manual: "Manual (periodic)",
+  disabled: "Disabled (no checkpoints)",
+};
+
+function CheckpointSection({ checkpoint }: { checkpoint: CheckpointStats }) {
+  // Non-WAL backends ignore the setting. Only surface that when the user picked
+  // something other than the default, so default runs stay uncluttered.
+  if (!checkpoint.appliesToVfs) {
+    if (checkpoint.mode === "auto") return null;
+    return (
+      <div className="bench-phase">
+        <div className="bench-phase-label">
+          WAL Checkpointing{" "}
+          <span className="bench-n">({CHECKPOINT_MODE_LABELS[checkpoint.mode]})</span>
+        </div>
+        <p className="bench-phase-note">
+          ⚠ Not a WAL backend — <code>wal_autocheckpoint</code> /{" "}
+          <code>wal_checkpoint</code> are no-ops here; setting ignored.
+        </p>
+      </div>
+    );
+  }
+
+  // Stats only make sense for manual mode (driver-sampled, self-consistent).
+  // Auto/disabled show just the mode label documenting what ran.
+  const pages =
+    checkpoint.walPagesPeak != null
+      ? `${checkpoint.walPagesPeak.toLocaleString()} pages`
+      : "—";
+
+  return (
+    <div className="bench-phase">
+      <div className="bench-phase-label">
+        WAL Checkpointing{" "}
+        <span className="bench-n">({CHECKPOINT_MODE_LABELS[checkpoint.mode]})</span>
+      </div>
+      {checkpoint.mode === "manual" && (
+        <div className="bench-phase-stats">
+          <BenchStat
+            label="Checkpoints"
+            value={checkpoint.checkpointsIssued.toLocaleString()}
+          />
+          <BenchStat label="Peak WAL" value={pages} />
+        </div>
+      )}
     </div>
   );
 }

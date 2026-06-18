@@ -3,6 +3,7 @@ import { AbstractPowerSyncDatabase } from "@powersync/web";
 import { useMetricsActions } from "../stores/metricsStore";
 import { useDataModelStore } from "../stores/dataModelStore";
 import { type DataModel } from "../schemas";
+import { Tooltip } from "./Tooltip";
 
 interface ControlPanelProps {
   listId: string;
@@ -274,12 +275,18 @@ export function ControlPanel({
   return (
     <aside className="control-panel">
       <div className="control-section">
-        <h3>Data Model</h3>
-        <p className="section-description">
-          Switches the PowerSync schema used by all watch and VFS columns. The
-          DB closes and re-opens with the new schema; existing tables stay on
-          disk as residual storage.
-        </p>
+        <h3>
+          Data Model
+          <Tooltip
+            content={
+              <>
+                Switches the PowerSync schema used by all watch and VFS
+                columns. The DB closes and re-opens with the new schema;
+                existing tables stay on disk as residual storage.
+              </>
+            }
+          />
+        </h3>
         <div className="data-model-toggle" role="radiogroup">
           <label className="data-model-option">
             <span className="data-model-option-main">
@@ -306,55 +313,68 @@ export function ControlPanel({
                 onChange={() => setModel("complex")}
               />
               <span>Complex</span>
+              <Tooltip
+                content={
+                  <>
+                    Simple ↔ Complex timings are <strong>not</strong> directly
+                    comparable — complex seeds write ~2.5× the rows and the
+                    watch reactor is heavier. Compare <em>within</em> Complex
+                    across strategies/VFS instead.
+                  </>
+                }
+              />
             </span>
             <span className="data-model-hint">
               5 tables, JOIN-heavy watch
             </span>
           </label>
         </div>
-        <p className="setting-description">
-          Simple ↔ Complex timings are <strong>not</strong> directly
-          comparable — complex seeds write ~2.5× the rows and the watch
-          reactor is heavier. Compare <em>within</em> Complex across
-          strategies/VFS instead.
-        </p>
       </div>
 
       {extraControls}
 
       <div className="control-section">
-        <h3>Test Scenarios</h3>
-        <p className="section-description">
-          Run different operations to observe watch query behavior
-        </p>
+        <h3>
+          Test Scenarios
+          <Tooltip content="Run different operations to observe watch query behavior." />
+        </h3>
 
         <div className="control-group">
           <h4>Data Operations</h4>
           <button onClick={seedData} className="control-button">
             <span className="button-label">Seed 100</span>
-            <span className="button-description">
-              {model === "complex"
-                ? "Creates 100 todos with random assignees and 0–3 tags each. Also seeds ~5 users + ~8 tags on first run."
-                : "Creates 100 todos. Tests medium datasets - Incremental & Differential should prevent unnecessary emissions."}
-            </span>
+            <Tooltip
+              variant="corner"
+              content={
+                model === "complex"
+                  ? "Creates 100 todos with random assignees and 0–3 tags each. Also seeds ~5 users + ~8 tags on first run."
+                  : "Creates 100 todos. Tests medium datasets — Incremental & Differential should prevent unnecessary emissions."
+              }
+            />
           </button>
 
           <button onClick={seedLargeDataset} className="control-button">
             <span className="button-label">Seed 500</span>
-            <span className="button-description">
-              {model === "complex"
-                ? "Creates 500 todos plus their tag links. Large dataset stress-tests the JOIN-heavy watch."
-                : "Creates 500 todos. Large dataset where Trigger-Based shines (O(1) overhead vs O(n) for Differential)."}
-            </span>
+            <Tooltip
+              variant="corner"
+              content={
+                model === "complex"
+                  ? "Creates 500 todos plus their tag links. Large dataset stress-tests the JOIN-heavy watch."
+                  : "Creates 500 todos. Large dataset where Trigger-Based shines (O(1) overhead vs O(n) for Differential)."
+              }
+            />
           </button>
 
           <button onClick={cleanData} className="control-button danger">
             <span className="button-label">Clean Data</span>
-            <span className="button-description">
-              {model === "complex"
-                ? "Deletes todo_tags → todos → tags → users → lists. All watches emit with empty results."
-                : "Deletes all todos. All watches emit with empty results."}
-            </span>
+            <Tooltip
+              variant="corner"
+              content={
+                model === "complex"
+                  ? "Deletes todo_tags → todos → tags → users → lists. All watches emit with empty results."
+                  : "Deletes all todos. All watches emit with empty results."
+              }
+            />
           </button>
         </div>
 
@@ -362,26 +382,26 @@ export function ControlPanel({
           <h4>Update Patterns</h4>
           <button onClick={singleUpdate} className="control-button">
             <span className="button-label">Single Update</span>
-            <span className="button-description">
-              Updates 1 todo. Minimal change - Differential preserves references
-              for other rows, enabling React.memo optimization.
-            </span>
+            <Tooltip
+              variant="corner"
+              content="Updates 1 todo. Minimal change — Differential preserves references for other rows, enabling React.memo optimization."
+            />
           </button>
 
           <button onClick={rapidUpdates} className="control-button">
             <span className="button-label">Rapid Updates (25)</span>
-            <span className="button-description">
-              25 updates in ~1 second. Shows throttling in action - watch
-              emissions are batched (default 30ms trailing edge).
-            </span>
+            <Tooltip
+              variant="corner"
+              content="25 updates in ~1 second. Shows throttling in action — watch emissions are batched (default 30ms trailing edge)."
+            />
           </button>
 
           <button onClick={updateUnrelatedTable} className="control-button">
             <span className="button-label">Update Unrelated List</span>
-            <span className="button-description">
-              Updates a different list. Basic Watch emits unnecessarily.
-              Incremental/Differential/Trigger-Based filter this out.
-            </span>
+            <Tooltip
+              variant="corner"
+              content="Updates a different list. Basic Watch emits unnecessarily. Incremental/Differential/Trigger-Based filter this out."
+            />
           </button>
         </div>
 
@@ -389,10 +409,10 @@ export function ControlPanel({
           <h4>View Control</h4>
           <button onClick={onToggleList} className="control-button">
             <span className="button-label">Toggle List</span>
-            <span className="button-description">
-              Switches between two different lists. All watches re-query with
-              new list_id parameter.
-            </span>
+            <Tooltip
+              variant="corner"
+              content="Switches between two different lists. All watches re-query with new list_id parameter."
+            />
           </button>
         </div>
       </div>
@@ -402,6 +422,7 @@ export function ControlPanel({
         <div className="throttle-control">
           <label htmlFor="throttle">
             Throttle: <strong>{throttleMs}ms</strong>
+            <Tooltip content="Trailing-edge throttle delay. Higher values reduce query frequency during rapid writes but decrease UI responsiveness." />
           </label>
           <input
             id="throttle"
@@ -412,10 +433,6 @@ export function ControlPanel({
             value={throttleMs}
             onChange={(e) => onThrottleChange(Number(e.target.value))}
           />
-          <p className="setting-description">
-            Trailing-edge throttle delay. Higher values reduce query frequency
-            during rapid writes but decrease UI responsiveness.
-          </p>
         </div>
       </div>
 

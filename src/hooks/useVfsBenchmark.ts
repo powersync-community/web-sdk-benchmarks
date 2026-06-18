@@ -76,6 +76,45 @@ export interface BenchmarkConfig {
   durationSec: number;
   txBatchSize: number;
   readSeedCount: number;
+  /**
+   * SQLite page cache size in KiB, passed straight through to the PowerSync
+   * `WASQLiteOpenFactory` (`cacheSizeKb`), which applies it as
+   * `PRAGMA cache_size = -${cacheSizeKb}`. The SDK default is 50 MiB (51200),
+   * large enough to hold the entire read working set at default seed counts —
+   * so the read phase serves pages from memory, not the VFS. Lowering this
+   * (e.g. to ~1 KiB) forces real VFS reads and surfaces per-backend I/O cost.
+   */
+  cacheSizeKb: number;
+  /**
+   * Number of additional read-only worker connections, passed straight through
+   * to `WASQLiteOpenFactory` (`additionalReaders`). **Only `OPFSWriteAheadVFS`
+   * acts on this** — the SDK opens this many extra workers, each hosting a
+   * `SQLITE_OPEN_READONLY` connection, so reads can run concurrently with a
+   * write (and with each other). Every other VFS ignores it and serves all
+   * traffic from a single connection.
+   *
+   * The SDK default is 1. To make the extra readers observable, the interleaved
+   * phase issues this many concurrent read loops — at the default of 1 the phase
+   * behaves exactly as before; raising it exercises the reader pool.
+   */
+  additionalReaders: number;
+  /**
+   * WAL checkpoint strategy. **Only `OPFSWriteAheadVFS` acts on this** — the
+   * other VFSs aren't WAL-mode, so `wal_autocheckpoint` / `wal_checkpoint` are
+   * harmless no-ops there and we skip issuing them.
+   *
+   * - `"auto"` — the VFS default (`wal_autocheckpoint=1`): a passive checkpoint
+   *   runs after *every* transaction commit. The WAL stays tiny, but each
+   *   commit pays the checkpoint cost.
+   * - `"manual"` — `wal_autocheckpoint=0` plus a periodic driver that issues
+   *   `PRAGMA wal_checkpoint(passive)` every `checkpointIntervalMs`. Commits
+   *   skip the per-commit checkpoint; the WAL drains on a timer instead.
+   * - `"disabled"` — `wal_autocheckpoint=0` with no driver. Pure write
+   *   throughput with an ever-growing WAL — a ceiling, not a real setting.
+   */
+  checkpointMode: "auto" | "manual" | "disabled";
+  /** Interval for the manual checkpoint driver (used only when `checkpointMode === "manual"`). */
+  checkpointIntervalMs: number;
   mode: "sequential";
   /** Shuffle instance order to mitigate position-dependent bias (WASM JIT, I/O cache) */
   shuffleOrder: boolean;
@@ -83,10 +122,24 @@ export interface BenchmarkConfig {
   iterations: number;
 }
 
+/** PowerSync's own default cache size: 50 MiB (DEFAULT_CACHE_SIZE_KB = 50 * 1024). */
+export const DEFAULT_CACHE_SIZE_KB = 50 * 1024;
+
+/** PowerSync's own default reader-worker count for OPFSWriteAheadVFS. */
+export const DEFAULT_ADDITIONAL_READERS = 1;
+
+/** Default cadence (ms) for the manual WAL checkpoint driver. */
+export const DEFAULT_CHECKPOINT_INTERVAL_MS = 250;
+
 export const DEFAULT_BENCHMARK_CONFIG: BenchmarkConfig = {
   durationSec: 5,
   txBatchSize: 500,
   readSeedCount: 1000,
+  cacheSizeKb: DEFAULT_CACHE_SIZE_KB,
+  additionalReaders: DEFAULT_ADDITIONAL_READERS,
+  // "auto" mirrors the VFS default (wal_autocheckpoint=1) — unchanged behavior.
+  checkpointMode: "auto",
+  checkpointIntervalMs: DEFAULT_CHECKPOINT_INTERVAL_MS,
   mode: "sequential",
   shuffleOrder: true,
   iterations: 1,
@@ -110,6 +163,8 @@ export interface PhaseResult {
 
 export interface InterleavedResult {
   totalMs: number;
+  /** Number of concurrent read loops run alongside the single write loop. */
+  readConcurrency: number;
   // Read side
   readsCompleted: number;
   readRowsPerSec: number;
@@ -124,11 +179,28 @@ export interface InterleavedResult {
   readSnapshots: { writeCount: number; latencyMs: number }[];
 }
 
+export interface CheckpointStats {
+  mode: BenchmarkConfig["checkpointMode"];
+  /** True only for OPFSWriteAheadVFS; false means the setting was ignored. */
+  appliesToVfs: boolean;
+  /** Manual checkpoints that completed during the run (manual mode only). */
+  checkpointsIssued: number;
+  /**
+   * Manual mode only: the highest pre-drain WAL size (in *distinct* pages) the
+   * checkpoint driver observed — each `PRAGMA wal_checkpoint(passive)` returns
+   * the size just before it drains. `null` for auto/disabled (no comparable
+   * sample) or if the VFS didn't report it. Note this counts distinct pages, so
+   * it reflects the working-set footprint, not cumulative log growth.
+   */
+  walPagesPeak: number | null;
+}
+
 export interface BenchmarkResult {
   singleWrites: PhaseResult;
   txWrites: PhaseResult;
   reads: PhaseResult;
   interleaved: InterleavedResult;
+  checkpoint: CheckpointStats;
   config: BenchmarkConfig;
 }
 
@@ -338,15 +410,19 @@ async function benchReads(
 /**
  * Interleaved read/write benchmark.
  *
- * NOTE: PowerSync's web SDK proxies all SQL through a single Web Worker,
- * so Promise.all does NOT achieve true parallelism. Both loops are serialized
- * through the worker's message queue. This measures how read latency is
- * affected by interleaved write operations, not true concurrent I/O.
+ * Concurrency: `readConcurrency` independent read loops run alongside one write
+ * loop, all via Promise.all. For every VFS except OPFSWriteAheadVFS the SDK has
+ * a single connection, so these all serialize through one worker's message
+ * queue — raising readConcurrency just adds queueing, not parallel I/O.
+ * OPFSWriteAheadVFS is the exception: with `additionalReaders` extra read-only
+ * workers, concurrent reads genuinely run in parallel with the write (and each
+ * other), so aggregate read throughput scales with readConcurrency.
  */
 async function benchInterleaved(
   db: PowerSyncDatabase,
   durationSec: number,
   readSeedCount: number,
+  readConcurrency: number,
   cancelledRef: React.RefObject<boolean>,
 ): Promise<InterleavedResult> {
   await cleanup(db);
@@ -386,28 +462,34 @@ async function benchInterleaved(
     }
   })();
 
-  // Read loop
-  const readLoop = (async () => {
-    let i = 0;
-    while (performance.now() < deadline && !cancelledRef.current) {
-      const id = readIds[i % readIds.length];
-      const writeCountAtRead = writesCompleted;
-      const t = performance.now();
-      await db.getOptional(`SELECT * FROM todos WHERE id = ?`, [id]);
-      const latencyMs = performance.now() - t;
-      readLatencies.push(latencyMs);
-      readSnapshots.push({ writeCount: writeCountAtRead, latencyMs });
-      i++;
-    }
-  })();
+  // Read loops — `readConcurrency` of them, each striding by the loop count so
+  // they don't all hammer the same id. On OPFSWriteAheadVFS these fan out across
+  // the reader-worker pool; on every other VFS they serialize through one worker.
+  const loopCount = Math.max(1, readConcurrency);
+  const readLoops = Array.from({ length: loopCount }, (_, loopIdx) =>
+    (async () => {
+      let i = loopIdx;
+      while (performance.now() < deadline && !cancelledRef.current) {
+        const id = readIds[i % readIds.length];
+        const writeCountAtRead = writesCompleted;
+        const t = performance.now();
+        await db.getOptional(`SELECT * FROM todos WHERE id = ?`, [id]);
+        const latencyMs = performance.now() - t;
+        readLatencies.push(latencyMs);
+        readSnapshots.push({ writeCount: writeCountAtRead, latencyMs });
+        i += loopCount;
+      }
+    })(),
+  );
 
-  await Promise.all([writeLoop, readLoop]);
+  await Promise.all([writeLoop, ...readLoops]);
   const totalMs = performance.now() - start;
 
   await cleanup(db);
 
   return {
     totalMs,
+    readConcurrency: loopCount,
     readsCompleted: readLatencies.length,
     readRowsPerSec: readLatencies.length / (totalMs / 1000),
     ...prefixKeys(computePercentiles(readLatencies), "read"),
@@ -436,6 +518,82 @@ function prefixKeys(
     readMedian: p.median,
     readP95: p.p95,
     readMax: p.max,
+  };
+}
+
+/**
+ * Pull the WAL page count out of a `PRAGMA wal_checkpoint(...)` result.
+ *
+ * OPFSWriteAheadVFS overrides the pragma to return the pre-checkpoint WAL size
+ * (in pages) as a single string-valued row; SQLite surfaces it under the
+ * `wal_checkpoint` column. Defensive against shape differences and non-WAL VFSs
+ * (which return SQLite's standard 3-column busy/log/checkpointed row instead).
+ */
+function parseWalPages(result: unknown): number | null {
+  const row = (result as { rows?: { _array?: Record<string, unknown>[] } })?.rows
+    ?._array?.[0];
+  if (!row) return null;
+  const first = Object.values(row)[0];
+  const n =
+    typeof first === "string"
+      ? parseInt(first, 10)
+      : typeof first === "number"
+        ? first
+        : NaN;
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Issue a passive checkpoint on the write connection. Routed through
+ * `db.execute` (writeLock) — a checkpoint writes pages back to the main file, so
+ * it must not land on a SQLITE_OPEN_READONLY reader worker. Returns the
+ * pre-checkpoint WAL size in pages, or null if unavailable.
+ */
+async function checkpointPassive(db: PowerSyncDatabase): Promise<number | null> {
+  const r = await db.execute(`PRAGMA wal_checkpoint(passive)`);
+  return parseWalPages(r);
+}
+
+interface CheckpointDriver {
+  stop: () => void;
+  getStats: () => { issued: number; walPagesPeak: number | null };
+}
+
+/**
+ * The "dedicated checkpoint worker": a timer that issues passive checkpoints
+ * every `intervalMs` instead of letting the VFS checkpoint on each commit. The
+ * actual checkpoint I/O runs asynchronously on the VFS's own write worker (via
+ * its `pendingOps` queue), so this only kicks it off. An in-flight guard keeps
+ * checkpoints from stacking when one runs longer than the interval.
+ */
+function startCheckpointDriver(
+  db: PowerSyncDatabase,
+  intervalMs: number,
+  cancelledRef: React.RefObject<boolean>,
+): CheckpointDriver {
+  let issued = 0;
+  let walPagesPeak: number | null = null;
+  let inFlight = false;
+  const handle = setInterval(() => {
+    if (inFlight || cancelledRef.current) return;
+    inFlight = true;
+    checkpointPassive(db)
+      .then((pages) => {
+        issued++;
+        if (pages != null && (walPagesPeak == null || pages > walPagesPeak)) {
+          walPagesPeak = pages;
+        }
+      })
+      .catch(() => {
+        // best-effort; a checkpoint racing teardown can reject harmlessly
+      })
+      .finally(() => {
+        inFlight = false;
+      });
+  }, intervalMs);
+  return {
+    stop: () => clearInterval(handle),
+    getStats: () => ({ issued, walPagesPeak }),
   };
 }
 
@@ -495,6 +653,8 @@ export function useVfsBenchmark() {
         }
 
         let db: PowerSyncDatabase | null = null;
+        let checkpointDriver: CheckpointDriver | null = null;
+        const isWal = vfsCfg.vfs === WASQLiteVFS.OPFSWriteAheadVFS;
         try {
           // Create an isolated DB instance — only one worker + WASM instance alive at a time
           patchState(vfsCfg.id, { phase: "warmup", status: "running" });
@@ -508,9 +668,31 @@ export function useVfsBenchmark() {
             database: new WASQLiteOpenFactory({
               dbFilename: vfsCfg.benchDbFilename,
               vfs: vfsCfg.vfs,
+              // Applied by the SDK as `PRAGMA cache_size = -${cacheSizeKb}`.
+              // Shrinking this is what makes the read phase actually hit the VFS.
+              cacheSizeKb: config.cacheSizeKb,
+              // Only OPFSWriteAheadVFS opens these extra read-only workers; all
+              // other VFSs ignore it. Exercised by the interleaved phase's
+              // concurrent read loops.
+              additionalReaders: config.additionalReaders,
             }),
           });
           await initPowerSync(db);
+
+          // Tier 3: WAL checkpoint strategy. Only OPFSWriteAheadVFS is WAL-mode;
+          // for every other VFS these pragmas are no-ops, so we skip them and
+          // leave the checkpoint stats marked "not applicable".
+          if (isWal && config.checkpointMode !== "auto") {
+            // Stop the VFS from checkpointing after every commit.
+            await db.execute(`PRAGMA wal_autocheckpoint=0`);
+          }
+          if (isWal && config.checkpointMode === "manual") {
+            checkpointDriver = startCheckpointDriver(
+              db,
+              config.checkpointIntervalMs,
+              cancelledRef,
+            );
+          }
 
           await warmup(db, cancelledRef);
           if (cancelledRef.current) break;
@@ -550,14 +732,45 @@ export function useVfsBenchmark() {
             db,
             config.durationSec,
             config.readSeedCount,
+            config.additionalReaders,
             cancelledRef,
           );
           if (cancelledRef.current) break;
 
+          // Collect checkpoint stats before tearing down the driver.
+          let checkpointsIssued = 0;
+          let walPagesPeak: number | null = null;
+          // Peak WAL is only meaningful (and self-consistent) when the manual
+          // driver samples it via its own passive checkpoints — every sample is
+          // the pre-drain high-water mark. We deliberately do NOT take an
+          // end-of-run reading for auto/disabled: that single quiescent sample
+          // isn't comparable to the driver's peak, and `getWriteAheadSize()`
+          // counts *distinct* pages (not total log growth), so it saturates at
+          // the working-set size rather than growing without bound.
+          if (checkpointDriver) {
+            const s = checkpointDriver.getStats();
+            checkpointsIssued = s.issued;
+            walPagesPeak = s.walPagesPeak;
+            checkpointDriver.stop();
+            checkpointDriver = null;
+          }
+
           patchState(vfsCfg.id, {
             status: "done",
             phase: null,
-            result: { singleWrites, txWrites, reads, interleaved, config },
+            result: {
+              singleWrites,
+              txWrites,
+              reads,
+              interleaved,
+              checkpoint: {
+                mode: config.checkpointMode,
+                appliesToVfs: isWal,
+                checkpointsIssued,
+                walPagesPeak,
+              },
+              config,
+            },
           });
         } catch (error) {
           patchState(vfsCfg.id, {
@@ -566,6 +779,11 @@ export function useVfsBenchmark() {
             error: error as Error,
           });
         } finally {
+          // Stop the checkpoint driver before closing (covers error/cancel paths).
+          if (checkpointDriver) {
+            checkpointDriver.stop();
+            checkpointDriver = null;
+          }
           // Tear down the DB so the next instance runs with zero contention
           if (db) {
             try {

@@ -175,13 +175,9 @@ header h1 {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.87);
   font-weight: 600;
-}
-
-.section-description {
-  margin: 0 0 12px 0;
-  font-size: 11px;
-  color: #999;
-  line-height: 1.4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .control-group {
@@ -232,10 +228,10 @@ button.danger:hover {
 
 /* Control Panel Buttons */
 .control-button {
+  position: relative;
   width: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   padding: 10px 12px;
   margin-bottom: 8px;
   text-align: left;
@@ -252,14 +248,6 @@ button.danger:hover {
   font-weight: 600;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.87);
-  margin-bottom: 4px;
-}
-
-.button-description {
-  font-size: 10px;
-  color: #999;
-  line-height: 1.4;
-  font-weight: 400;
 }
 
 .add-todo-form {
@@ -305,13 +293,6 @@ button.danger:hover {
   outline: none;
   -webkit-appearance: none;
   margin: 0;
-}
-
-.setting-description {
-  margin: 0;
-  font-size: 10px;
-  color: #999;
-  line-height: 1.4;
 }
 
 .throttle-control input[type="range"]::-webkit-slider-thumb {
@@ -620,6 +601,17 @@ code {
   letter-spacing: 0;
 }
 
+.bench-phase-note {
+  margin: 0 0 6px;
+  padding: 4px 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: #d9a441;
+  background: rgba(217, 164, 65, 0.08);
+  border: 1px solid rgba(217, 164, 65, 0.25);
+  border-radius: 3px;
+}
+
 .bench-phase-stats {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -691,6 +683,9 @@ code {
 .bench-n-label {
   font-size: 11px;
   color: #999;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .bench-n-field {
@@ -1015,3 +1010,111 @@ code {
   font-style: italic;
 }
 
+/* Tooltip */
+.tooltip {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.tooltip--corner {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+.tooltip-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  border: 1px solid #555;
+  background: #2a2a2a;
+  color: #aaa;
+  font-size: 9px;
+  font-style: italic;
+  font-family: Georgia, serif;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  white-space: nowrap;
+}
+
+.tooltip-trigger:hover,
+.tooltip-trigger:focus-visible {
+  background: #3a3a3a;
+  border-color: #777;
+  color: rgba(255, 255, 255, 0.87);
+  outline: none;
+}
+
+.tooltip-content {
+  position: absolute;
+  z-index: 100;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  background: #2a2a2a;
+  border: 1px solid #555;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  color: #ccc;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.tooltip-content::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #555;
+}
+
+.tooltip:hover .tooltip-content,
+.tooltip:focus-within .tooltip-content {
+  opacity: 1;
+  visibility: visible;
+}
+
+.tooltip-content code {
+  font-size: 10px;
+  background: #1e1e1e;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.tooltip-content strong {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.tooltip--corner .tooltip-content {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.tooltip--corner .tooltip-content::after {
+  left: auto;
+  right: 4px;
+  transform: none;
+}

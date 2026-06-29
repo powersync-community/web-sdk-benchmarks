@@ -1,0 +1,6 @@
+allowBuilds:
+  '@journeyapps/wa-sqlite': true
+  '@swc/core': true
+  esbuild: true
+patchedDependencies:
+  '@powersync/common@1.53.1': patches/@powersync__common@1.53.1.patch

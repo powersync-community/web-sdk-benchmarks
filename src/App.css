@@ -1054,11 +1054,14 @@ code {
 }
 
 .tooltip-content {
-  position: absolute;
+  /* Exact position is computed in JS (top/left via inline style) so the
+     tooltip stays inside the viewport and escapes overflow ancestors. The
+     base `fixed` here keeps the closed tooltip out of normal flow — without
+     it the hidden span would take up layout space and shift the panel. */
+  position: fixed;
+  top: 0;
+  left: 0;
   z-index: 100;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
   width: max-content;
   max-width: 260px;
   padding: 8px 10px;
@@ -1083,15 +1086,24 @@ code {
 .tooltip-content::after {
   content: "";
   position: absolute;
-  top: 100%;
-  left: 50%;
+  left: var(--arrow-left, 50%);
   transform: translateX(-50%);
   border: 5px solid transparent;
+}
+
+/* Tooltip sits above the trigger: arrow points down from its bottom edge. */
+.tooltip-content--top::after {
+  top: 100%;
   border-top-color: #555;
 }
 
-.tooltip:hover .tooltip-content,
-.tooltip:focus-within .tooltip-content {
+/* Tooltip sits below the trigger: arrow points up from its top edge. */
+.tooltip-content--bottom::after {
+  bottom: 100%;
+  border-bottom-color: #555;
+}
+
+.tooltip-content--open {
   opacity: 1;
   visibility: visible;
 }
@@ -1105,16 +1117,4 @@ code {
 
 .tooltip-content strong {
   color: rgba(255, 255, 255, 0.95);
-}
-
-.tooltip--corner .tooltip-content {
-  left: auto;
-  right: 0;
-  transform: none;
-}
-
-.tooltip--corner .tooltip-content::after {
-  left: auto;
-  right: 4px;
-  transform: none;
 }

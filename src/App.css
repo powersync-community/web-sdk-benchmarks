@@ -236,12 +236,38 @@ button.danger:hover {
   margin-bottom: 8px;
   text-align: left;
   white-space: normal;
+  /* Lighter grey than the form fields (#2a2a2a) so action buttons read as
+     interactive and lift off the non-interactive inputs and selects. */
+  background: #3a3a3a;
+  border-color: #6a6a6a;
   transition: all 0.2s ease;
 }
 
-.control-button:hover {
-  background: #333;
-  border-color: #666;
+/* Scoped so it doesn't clobber the .danger / .primary variants below. */
+.control-button:not(.danger):not(.primary):hover {
+  background: #474747;
+  border-color: #808080;
+}
+
+.control-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Primary call-to-action (e.g. Run Benchmark) — greyscale, but a near-white
+   filled button so it stands out as THE action against the dark controls. */
+.control-button.primary {
+  background: #e8e8e8;
+  border-color: #e8e8e8;
+}
+
+.control-button.primary:hover:not(:disabled) {
+  background: #fff;
+  border-color: #fff;
+}
+
+.control-button.primary .button-label {
+  color: #1a1a1a;
 }
 
 .button-label {

@@ -115,6 +115,8 @@ Benchmark rows use `list_id = "00000000-0000-bench-0000-000000000000"` so they n
 2. **Transaction Writes** — N inserts in one `writeTransaction()` (one commit); the best-case baseline
 3. **Reads** — N `getOptional()` by PK against the rows left by transaction writes
 
+**Read order is randomized** (Fisher–Yates `shuffle()` in `src/utils/shuffle.ts`) in both the Reads and Interleaved phases. Rows are seeded sequentially, so reading them back in insertion order is a cache-friendly near-sequential access pattern; shuffling the id list once after seeding defeats that page locality and surfaces **worst-case** random-access read cost. Pair with a low **SQLite Cache Size** to force real VFS reads. This is unconditional — there's no toggle.
+
 ### VFS DB Lifecycle
 
 `useVfsDatabases(enabled, model)` is called at `App` level with `enabled = mode !== "watch-query"`. This means:

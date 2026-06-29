@@ -277,7 +277,7 @@ export function RawBenchmarkContent({
             <button
               onClick={() => run(visibleVfsConfigs, config)}
               disabled={!canRun}
-              className="control-button"
+              className="control-button primary"
             >
               <span className="button-label">Run Benchmark</span>
               <Tooltip
@@ -354,6 +354,17 @@ export function RawBenchmarkContent({
               Even then, <code>OPFSWriteAheadVFS</code> keeps page 1 in memory
               while the synchronous OPFS VFSs re-fetch it for every read tx, so
               WAL can read faster despite doing more work.
+            </dd>
+            <dt>Read Access Pattern</dt>
+            <dd>
+              The <strong>Reads</strong> and <strong>Interleaved</strong> phases
+              read the seeded rows in <strong>randomized</strong> order, not
+              insertion order. Reading rows back in the order they were written
+              is a near-sequential, cache-friendly pattern (adjacent rows tend to
+              share pages); shuffling defeats that page locality so the numbers
+              reflect <em>worst-case</em> random access. Pair with a low{" "}
+              <strong>SQLite Cache Size</strong> to surface true per-backend VFS
+              read cost.
             </dd>
             <dt>Reader Workers &amp; Concurrency</dt>
             <dd>

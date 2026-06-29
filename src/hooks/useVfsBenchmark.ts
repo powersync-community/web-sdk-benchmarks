@@ -7,6 +7,7 @@ import {
 import { type VFSConfig } from "../vfsConfig";
 import { initPowerSync } from "../powersync";
 import { simpleSchema } from "../schemas";
+import { shuffle } from "../utils/shuffle";
 
 // Isolated list_id so benchmark rows never appear in watch query columns
 const BENCH_LIST_ID = "00000000-0000-bench-0000-000000000000";
@@ -386,12 +387,17 @@ async function benchReads(
     });
   }
 
+  // Read in randomized order, not insertion order. The rows were seeded
+  // sequentially, so walking them in order is a near-sequential, cache-friendly
+  // access pattern (adjacent rows → adjacent pages). Shuffling once defeats that
+  // page locality on every pass — surfacing worst-case random-access read cost.
+  const readOrder = shuffle(ids);
   const latencies: number[] = [];
   const deadline = performance.now() + durationSec * 1000;
   const start = performance.now();
   let i = 0;
   while (performance.now() < deadline && !cancelledRef.current) {
-    const id = ids[i % ids.length];
+    const id = readOrder[i % readOrder.length];
     const t = performance.now();
     await db.getOptional(`SELECT * FROM todos WHERE id = ?`, [id]);
     latencies.push(performance.now() - t);
@@ -444,6 +450,10 @@ async function benchInterleaved(
     });
   }
 
+  // Randomize read order (see benchReads): walk the seeded rows in shuffled
+  // order so reads measure worst-case random access, not sequential locality.
+  const readOrder = shuffle(readIds);
+
   const readLatencies: number[] = [];
   const readSnapshots: { writeCount: number; latencyMs: number }[] = [];
   let writesCompleted = 0;
@@ -470,7 +480,7 @@ async function benchInterleaved(
     (async () => {
       let i = loopIdx;
       while (performance.now() < deadline && !cancelledRef.current) {
-        const id = readIds[i % readIds.length];
+        const id = readOrder[i % readOrder.length];
         const writeCountAtRead = writesCompleted;
         const t = performance.now();
         await db.getOptional(`SELECT * FROM todos WHERE id = ?`, [id]);

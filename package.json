@@ -34,15 +34,5 @@
     "vite": "^7.3.3",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@journeyapps/wa-sqlite",
-      "@swc/core",
-      "esbuild"
-    ],
-    "patchedDependencies": {
-      "@powersync/common@1.53.1": "patches/@powersync__common@1.53.1.patch"
-    }
   }
 }

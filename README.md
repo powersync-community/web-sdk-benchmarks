@@ -1,12 +1,12 @@
 # PowerSync Web SDK Benchmarks
 
-A stand-alone React demo app that benchmarks PowerSync's watch query implementations and VFS storage options side-by-side, using the [@powersync/web](https://www.npmjs.com/package/@powersync/web) module. Three modes let you explore different dimensions of performance. Important note; this benchmarking tool does not connect to a PowerSync Service instance, everything runs locally. 
+A stand-alone React demo app that benchmarks PowerSync's watch query implementations and VFS storage options side-by-side, using v2 of the [@powersync/web](https://www.npmjs.com/package/@powersync/web) SDK. Three modes let you explore different dimensions of performance. Important note; this benchmarking tool does not connect to a PowerSync Service instance, everything runs locally. 
 
 > All sources were written with AI assistance. 
 
 ## Data Model Toggle
 
-The control panel has a **Simple / Complex** radio that swaps the PowerSync schema. Each schema uses its own DB file (`exampleVFS-simple.db` / `exampleVFS-complex.db`, plus `vfs-compare-{id}-{model}.db` for the 4 VFS columns) so swapping opens a fresh DB rather than migrating in place. This sidesteps a wa-sqlite 1.5+ `OPFSWriteAheadVFS` strict-WAL check that PowerSync core's `replace_schema` would otherwise trip on schema migration.
+The control panel has a **Simple / Complex** radio that swaps the PowerSync schema. Each schema uses its own DB file (`exampleVFS-simple.db` / `exampleVFS-complex.db`, plus `vfs-compare-{id}-{model}.db` for the VFS columns) so swapping opens a fresh DB rather than migrating in place, and each model keeps its own seeded data.
 
 | Mode | Tables | Watch SQL |
 |------|--------|-----------|
@@ -47,14 +47,19 @@ The **throttle slider** controls the trailing-edge debounce applied to all watch
 
 ### Watch Strategy Comparison
 
-Runs the same watch query strategy (selectable) against four different VFS backends simultaneously, so you can compare how storage choice affects watch query latency and render behaviour.
+Runs the same watch query strategy (selectable) against every VFS backend simultaneously, so you can compare how storage choice affects watch query latency and render behaviour.
 
 | VFS | Storage |
 |-----|---------|
 | `IDBBatchAtomicVFS` | IndexedDB |
 | `OPFSCoopSyncVFS` | OPFS (cooperative sync, default) |
 | `AccessHandlePoolVFS` | OPFS (access handle pool) |
-| `OPFSWriteAheadVFS` | OPFS + WAL |
+| `OPFSWriteAheadVFS` | OPFS + WAL (the only backend with concurrent readers) |
+| `SimpleOpfsVFS` | OPFS (two pre-opened file handles; what `vfs: 'auto'` picks) |
+| `InMemoryVFS (worker)` | Memory only, SQLite in a dedicated worker. No persistence. |
+| `InMemoryVFS (main thread)` | Memory only, SQLite runs synchronously in the tab. No persistence. |
+
+The two in-memory columns are baselines, not storage recommendations. The worker variant pays the same `postMessage` round-trip as the persistent backends with zero storage I/O, so the gap between it and any other column is that backend's storage cost. The main-thread variant removes the worker round-trip as well, which shows what the worker hop itself costs. Both lose their data when the database closes.
 
 Each column has its own `PowerSyncDatabase` instance and independent metrics slot. Control panel writes are broadcast to all active VFS databases simultaneously.
 
@@ -67,11 +72,38 @@ Measures raw database operation latency for each VFS backend with no watch queri
 | **Single Writes** | Individual inserts, one commit per row, for the configured duration. Exposes per-commit VFS overhead. |
 | **Transaction Writes** | Batched inserts (`txBatchSize` per `writeTransaction()`) for the configured duration. Per-transaction commit latency is captured. |
 | **Reads** | Primary-key lookups for the configured duration against a pool of pre-seeded rows. |
-| **Read Under Write Pressure** | Interleaved reads and writes for the configured duration. Both are serialised through the same Web Worker, so this shows how read latency degrades when writes compete for the worker, not true concurrent I/O. |
+| **Interleaved Read + Write** | One write loop plus N concurrent read loops (N = Reader Workers) for the configured duration. On every backend except `OPFSWriteAheadVFS` these serialise through one connection, so this shows how read latency degrades when writes compete for it. On `OPFSWriteAheadVFS` the extra reader workers run reads in parallel with the write. |
 
 Results show total time, ops/sec, and per-operation min / median / p95 / max (transaction writes also report per-commit percentiles). The gap between Single Writes and Transaction Writes is the key signal: a large gap means the VFS has expensive per-commit overhead and single writes should be avoided in hot paths.
 
-Configurable parameters: **Duration** (seconds per phase, default 5), **Transaction Batch Size** (default 500), and **Read Seed Rows** (default 1000). A **comparison chart** (bar chart icon in the header) overlays min and p95 latency for all active backends side-by-side across every phase.
+Configurable parameters:
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| **Duration** | 5 s per phase | |
+| **Transaction Batch Size** | 500 | Rows per `writeTransaction()` |
+| **Read Seed Rows** | 1000 | |
+| **SQLite Cache Size** | 50 MiB (SDK default) | At the default the read working set fits in the page cache, so reads never touch the VFS. Lower it to measure real read I/O. |
+| **Reader Workers** | 1 | `additionalReaders`. Only `OPFSWriteAheadVFS` opens extra read connections. |
+| **WAL Checkpointing** | Auto | `OPFSWriteAheadVFS` only. See below. |
+
+A **comparison chart** (bar chart icon in the header) compares latency and throughput for all active backends side-by-side across every phase.
+
+#### WAL checkpointing
+
+`PRAGMA wal_autocheckpoint` on `OPFSWriteAheadVFS` is an on/off switch, not a frequency. Any non-zero value (the default is `1`) enables auto-checkpointing. A checkpoint is then attempted only when all of the following hold:
+
+1. The WAL holds at least `PRAGMA journal_size_limit` pages (default 1000).
+2. All connections are reading from the newer WAL file, so the older one can be recycled.
+3. Some connection has `wal_autocheckpoint` enabled.
+
+The three benchmark settings:
+
+- **Auto (SDK default)** leaves auto-checkpointing on.
+- **Manual (periodic FULL)** sets `wal_autocheckpoint=0` and runs `PRAGMA wal_checkpoint(full)` every 250 ms. `full` takes the write lock and guarantees a completed checkpoint. `passive` would only attempt one under the same conditions as an auto-checkpoint and return before it finishes. The card reports how many checkpoints completed and the peak pre-checkpoint WAL size.
+- **Disabled** sets `wal_autocheckpoint=0` and never checkpoints. This is a throughput ceiling, not a realistic configuration.
+
+Thanks to [@rhashimoto](https://github.com/rhashimoto) for the corrections in [#4](https://github.com/powersync-community/web-sdk-benchmarks/issues/4).
 
 ## Getting Started
 
@@ -115,8 +147,8 @@ src/
 │
 ├── hooks/
 │   ├── useWatchMetrics.ts           # Stable per-watch metrics API (non-reactive)
-│   ├── useVfsDatabases.ts           # Creates/inits/disposes 4 VFS DB instances
-│   └── useVfsBenchmark.ts           # Benchmark runner (single writes / tx writes / reads)
+│   ├── useVfsDatabases.ts           # Creates/inits/disposes one DB instance per VFS backend
+│   └── useVfsBenchmark.ts           # Benchmark runner (single writes / tx writes / reads / interleaved)
 │
 ├── stores/
 │   ├── metricsStore.ts              # Zustand — split into actions (stable) + state (reactive)
@@ -128,14 +160,14 @@ src/
 
 ## Technical Notes
 
-**VFS DB lifecycle** — VFS databases are initialized once when entering either VFS mode and kept alive while switching between Watch Strategy Comparison and Raw Benchmark. Switching back to OPFSCoopSync Comparison mode disposes all four instances.
+**VFS DB lifecycle** — the comparison databases are created when entering Watch Strategy Comparison and disposed when leaving it. The Raw VFS Benchmark opens its own isolated database per backend, one at a time, and wipes any leftover file first so every run starts from a clean baseline.
 
 **Metrics store split** — `useMetricsActions` is intentionally non-reactive so components that only record metrics never re-render. Only `useWatchMetricsState(watchId)` and `useGlobalTotals()` trigger re-renders.
 
 **Benchmark isolation** — benchmark rows use a reserved `list_id` (`00000000-0000-bench-0000-000000000000`) so they never appear in watch query columns.
 
-**WASM / build** — `vite.config.ts` excludes `@journeyapps/wa-sqlite` and `@powersync/web` from dependency optimisation. Plugins: `vite-plugin-wasm`, `vite-plugin-top-level-await`, `@vitejs/plugin-react`.
+**WASM / build** — `vite.config.ts` excludes `@powersync/web` from dependency optimisation (it ships the web workers and WASM builds; wa-sqlite is bundled with it in v2). Plugins: `vite-plugin-wasm`, `vite-plugin-top-level-await`, `@vitejs/plugin-react`.
 
 ## Tech Stack
 
-React, TypeScript, Vite, PowerSync (`@powersync/web` + wa-sqlite), Zustand.
+React, TypeScript, Vite, PowerSync JS SDK v2 (`@powersync/web` 2.7+, `@powersync/react` 2.2+), Zustand.

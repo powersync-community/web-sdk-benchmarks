@@ -296,7 +296,7 @@ function VfsAppContent({
         <header>
           <h1>VFS Comparison Demo</h1>
           <p className="subtitle">
-            Comparing four VFS backends using the optimal Differential watch
+            Comparing VFS backends side by side using the selected watch
             strategy
           </p>
         </header>
@@ -314,7 +314,8 @@ function VfsAppContent({
         <div
           className="watch-grid"
           style={{
-            gridTemplateColumns: `repeat(${visibleInstances.length}, 1fr)`,
+            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+            gridAutoRows: "minmax(0, 1fr)",
           }}
         >
           {visibleInstances.map((instance) => (

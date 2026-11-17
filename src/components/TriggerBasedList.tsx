@@ -157,23 +157,19 @@ export function TriggerBasedList({
       // The enrichment query MUST run on the same transaction context as the
       // trigger fire — `trackTableDiff` calls our onChange inside a
       // `writeTransaction`, which holds the writer lock on single-worker
-      // VFSs (idb-batch / opfs-coop / access-handle-pool). Using `db.getAll`
+      // VFSs (every backend except opfs-wal). Using `db.getAll`
       // here would deadlock those VFSs (the read waits for the writer lock
       // that this very transaction holds). OPFSWriteAheadVFS escapes the
       // deadlock only because it has a separate reader worker.
       //
-      // The handler context is built via `{ ...tx, withDiff, ... }`, so the
-      // tx methods on its prototype (getAll/execute/...) are NOT on the
-      // spread — only `withDiff`/`withExtractedDiff` are. We piggy-back on
-      // `withDiff` to run the enrichment join on the same writer tx; the
-      // unused DIFF CTE is harmless.
+      // The handler context only exposes `withDiff`/`withExtractedDiff`, so we
+      // piggy-back on `withDiff` to run the enrichment join on the same
+      // writer tx; the unused DIFF CTE is harmless.
       const refreshAffected = async (
-        // Narrowed to just `withDiff` on purpose: the runtime context is built
-        // via `{ ...tx, withDiff, withExtractedDiff }`, so only those survive the
-        // spread (getAll/execute/... would deadlock — see comment above). The SDK
-        // 1.53.x types withDiff's params as `ReadonlyArray<Readonly<any>>`, which
-        // rejects primitive bind params; `readonly any[]` bridges that while
-        // keeping the guardrail intact.
+        // Narrowed to just `withDiff` on purpose (a fresh `db.*` read would
+        // deadlock — see comment above). The SDK types withDiff's params as
+        // `ReadonlyArray<Readonly<any>>`; `readonly any[]` keeps primitive
+        // bind params ergonomic here.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ctx: { withDiff: <T>(query: string, params?: readonly any[]) => Promise<T[]> },
         idsToRefresh: Iterable<string>,

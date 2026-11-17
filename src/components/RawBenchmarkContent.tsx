@@ -29,7 +29,7 @@ const CACHE_SIZE_PRESETS: { label: string; cacheSizeKb: number }[] = [
 ];
 
 /**
- * Reader-worker presets, passed to `WASQLiteOpenFactory` as `additionalReaders`.
+ * Reader-worker presets, passed in the `database` options as `additionalReaders`.
  * Only `OPFSWriteAheadVFS` opens these extra read-only workers; the interleaved
  * phase runs this many concurrent read loops to exercise them. "Default (1)"
  * matches PowerSync's own default and leaves the phase behaving as before.
@@ -42,16 +42,17 @@ const READER_PRESETS: { label: string; additionalReaders: number }[] = [
 
 /**
  * WAL checkpoint strategy, applied via PRAGMAs to `OPFSWriteAheadVFS` only.
- * "Auto" is the VFS default (checkpoint after every commit); "Manual" disables
- * that and drains the WAL on a timer; "Disabled" never explicitly checkpoints
- * (a write-throughput ceiling, not a real setting).
+ * "Auto" is the VFS default (auto-checkpointing enabled; the VFS checkpoints
+ * once the WAL passes `journal_size_limit` pages); "Manual" disables that and
+ * runs a FULL checkpoint on a timer; "Disabled" never checkpoints (a
+ * write-throughput ceiling, not a real setting).
  */
 const CHECKPOINT_PRESETS: {
   label: string;
   mode: BenchmarkConfig["checkpointMode"];
 }[] = [
-  { label: "Auto (per-commit)", mode: "auto" },
-  { label: "Manual (periodic)", mode: "manual" },
+  { label: "Auto (SDK default)", mode: "auto" },
+  { label: "Manual (periodic FULL)", mode: "manual" },
   { label: "Disabled (no checkpoints)", mode: "disabled" },
 ];
 
@@ -161,7 +162,7 @@ export function RawBenchmarkContent({
               <Tooltip
                 content={
                   <>
-                    Passed to <code>WASQLiteOpenFactory</code> as{" "}
+                    Passed in the <code>database</code> options as{" "}
                     <code>cacheSizeKb</code> (
                     <code>PRAGMA cache_size = -cacheSizeKb</code>). PowerSync's
                     default 50 MiB holds the entire read working set at typical
@@ -195,7 +196,7 @@ export function RawBenchmarkContent({
               <Tooltip
                 content={
                   <>
-                    Passed to <code>WASQLiteOpenFactory</code> as{" "}
+                    Passed in the <code>database</code> options as{" "}
                     <code>additionalReaders</code>. Only{" "}
                     <code>OPFSWriteAheadVFS</code> opens these extra read-only
                     workers — every other VFS serves all traffic from a single
@@ -236,15 +237,20 @@ export function RawBenchmarkContent({
                   <>
                     Applies only to <code>OPFSWriteAheadVFS</code> (the WAL
                     backend); other VFSs ignore it.{" "}
-                    <strong>Auto</strong> is the VFS default —{" "}
-                    <code>wal_autocheckpoint=1</code> runs a passive checkpoint
-                    after <em>every</em> commit, keeping the WAL tiny but taxing
-                    each write. <strong>Manual</strong> sets{" "}
-                    <code>wal_autocheckpoint=0</code> and drains the WAL on a
-                    timer (<code>PRAGMA wal_checkpoint(passive)</code> every{" "}
-                    {config.checkpointIntervalMs}ms). <strong>Disabled</strong>{" "}
-                    never explicitly checkpoints — a throughput ceiling, not a
-                    real setting.
+                    <strong>Auto</strong> is the VFS default:{" "}
+                    <code>wal_autocheckpoint</code> is an on/off switch, and
+                    any non-zero value (default <code>1</code>) enables it. A
+                    checkpoint is then attempted once the WAL holds at least{" "}
+                    <code>journal_size_limit</code> pages (default 1000) and
+                    every connection is reading from the newer WAL file.{" "}
+                    <strong>Manual</strong> sets{" "}
+                    <code>wal_autocheckpoint=0</code> and runs{" "}
+                    <code>PRAGMA wal_checkpoint(full)</code> every{" "}
+                    {config.checkpointIntervalMs}ms. <code>full</code>{" "}
+                    guarantees a completed checkpoint, where{" "}
+                    <code>passive</code> only attempts one.{" "}
+                    <strong>Disabled</strong> never checkpoints — a throughput
+                    ceiling, not a real setting.
                   </>
                 }
               />
@@ -339,7 +345,11 @@ export function RawBenchmarkContent({
             <dd>
               All operations go through PowerSync's Web Worker proxy (JS →
               postMessage → worker → SQLite → postMessage → JS). Latencies
-              include this round-trip, not just VFS I/O.
+              include this round-trip, not just VFS I/O.{" "}
+              <strong>InMemoryVFS (worker)</strong> pays the same round-trip
+              with no storage I/O, so it is the baseline to subtract.{" "}
+              <strong>InMemoryVFS (main thread)</strong> skips the worker
+              entirely and runs SQLite synchronously in the tab.
             </dd>
             <dt>Phase Isolation</dt>
             <dd>
@@ -371,14 +381,19 @@ export function RawBenchmarkContent({
             </dd>
             <dt>WAL Checkpointing</dt>
             <dd>
-              <code>OPFSWriteAheadVFS</code> checkpoints after every commit by
-              default (<code>wal_autocheckpoint=1</code>), so its write phases
-              carry the cost of draining the WAL each time.{" "}
-              <strong>Manual</strong> and <strong>Disabled</strong> lift that
-              cost off the commit path — expect somewhat higher write throughput
-              (the effect is modest and noisy at short durations). In{" "}
-              <strong>Manual</strong> the card shows how many checkpoints the
-              driver fired and the peak pre-drain WAL size — note this VFS counts{" "}
+              <code>OPFSWriteAheadVFS</code> has auto-checkpointing enabled by
+              default (<code>wal_autocheckpoint=1</code>). That is a switch,
+              not a frequency: the VFS attempts a checkpoint only once the WAL
+              reaches <code>journal_size_limit</code> pages (default 1000) and
+              all connections are reading from the newer WAL file, so write
+              phases pay for a checkpoint now and then, not on every commit.{" "}
+              <strong>Manual</strong> turns that off and runs a{" "}
+              <code>FULL</code> checkpoint on a timer; each one holds the write
+              lock until it completes, so it trades a small, bounded WAL for
+              periodic write pauses. <strong>Disabled</strong> never
+              checkpoints. In <strong>Manual</strong> the card shows how many
+              checkpoints the driver completed and the peak pre-checkpoint WAL
+              size — note this VFS counts{" "}
               <em>distinct</em> pages, so it reflects the working set, not
               cumulative log growth. The other VFSs aren't WAL-mode, so the
               setting is recorded but does nothing — each card says so.
@@ -449,7 +464,8 @@ export function RawBenchmarkContent({
         <div
           className="watch-grid"
           style={{
-            gridTemplateColumns: `repeat(${visibleVfsConfigs.length}, 1fr)`,
+            gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+            gridAutoRows: "minmax(0, 1fr)",
           }}
         >
           {visibleVfsConfigs.map((vfsCfg) => (

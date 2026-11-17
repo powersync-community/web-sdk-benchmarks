@@ -47,6 +47,7 @@ export function BenchmarkResultCard({
   return (
     <div className="watch-container bench-card">
       <div className="bench-card-header">{vfsConfig.label}</div>
+      {vfsConfig.note && <p className="bench-phase-note">{vfsConfig.note}</p>}
 
       {(!state || state.status === "idle") && (
         <p className="bench-card-placeholder">Press Run Benchmark to start</p>
@@ -276,8 +277,8 @@ function InterleavedSection({
 }
 
 const CHECKPOINT_MODE_LABELS: Record<CheckpointStats["mode"], string> = {
-  auto: "Auto (per-commit)",
-  manual: "Manual (periodic)",
+  auto: "Auto (SDK default)",
+  manual: "Manual (periodic FULL)",
   disabled: "Disabled (no checkpoints)",
 };
 

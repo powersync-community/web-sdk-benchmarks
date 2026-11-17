@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { PowerSyncDatabase, WASQLiteOpenFactory } from "@powersync/web";
+import { PowerSyncDatabase } from "@powersync/web";
 import { VFS_CONFIGS, vfsDbFilename, type VFSConfig } from "../vfsConfig";
 import { initPowerSync } from "../powersync";
 import { getSchema, type DataModel } from "../schemas";
@@ -39,16 +39,16 @@ export function useVfsDatabases(
     const schema = getSchema(model);
 
     // Create all DB instances immediately. Filenames are per-model so the
-    // schema swap opens a fresh file instead of migrating in place (which
-    // trips wa-sqlite's strict-WAL check inside `replace_schema`).
+    // schema swap opens a fresh file instead of migrating in place.
     const newInstances: VFSInstance[] = VFS_CONFIGS.map((config) => ({
       config,
       db: new PowerSyncDatabase({
         schema,
-        database: new WASQLiteOpenFactory({
+        database: {
           dbFilename: vfsDbFilename(config, model),
           vfs: config.vfs,
-        }),
+          ...config.openOptions,
+        },
       }),
       status: "pending" as VFSInstanceStatus,
     }));

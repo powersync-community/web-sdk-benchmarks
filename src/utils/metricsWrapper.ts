@@ -1,11 +1,11 @@
-import { AbstractPowerSyncDatabase } from '@powersync/web';
+import type { CommonPowerSyncDatabase } from '@powersync/web';
 
 /**
  * Set up metrics tracking using PowerSync database events.
  * This uses the proper event listener API instead of wrapping methods.
  */
 export function setupMetricsTracking(
-  db: AbstractPowerSyncDatabase,
+  db: CommonPowerSyncDatabase,
   incrementWrites: () => void,
   recordMutationTime?: () => void
 ): () => void {

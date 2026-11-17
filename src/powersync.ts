@@ -1,8 +1,7 @@
 import {
   PowerSyncDatabase,
-  AbstractPowerSyncDatabase,
   WASQLiteVFS,
-  WASQLiteOpenFactory,
+  type CommonPowerSyncDatabase,
 } from "@powersync/web";
 import { getSchema, type DataModel } from "./schemas";
 
@@ -12,11 +11,9 @@ const POWERSYNC_URL = "http://localhost:8080";
 export const DEFAULT_VFS = WASQLiteVFS.OPFSCoopSyncVFS;
 
 /**
- * Per-model DB filenames. PowerSync core's `replace_schema` does in-place
- * schema migration that issues writes inside a deferred transaction, which
- * wa-sqlite's `OPFSWriteAheadVFS` (1.5+) rejects with `IOERR`. Giving each
- * schema its own file means swaps open a fresh DB instead of migrating,
- * sidestepping the SDK bug.
+ * Per-model DB filenames. Giving each schema its own file means a Simple ↔
+ * Complex swap opens a fresh DB instead of migrating the previous one in
+ * place, so every model starts from its own clean, independently seeded data.
  */
 export function defaultDbFilename(model: DataModel): string {
   return `exampleVFS-${model}.db`;
@@ -35,7 +32,7 @@ export function createDatabase({
 }: CreateDatabaseOptions): PowerSyncDatabase {
   return new PowerSyncDatabase({
     schema: getSchema(model),
-    database: new WASQLiteOpenFactory({ dbFilename, vfs }),
+    database: { dbFilename, vfs },
   });
 }
 
@@ -49,7 +46,7 @@ export const connector = {
       token,
     };
   },
-  async uploadData(database: AbstractPowerSyncDatabase) {
+  async uploadData(database: CommonPowerSyncDatabase) {
     const transaction = await database.getNextCrudTransaction();
 
     if (!transaction) {

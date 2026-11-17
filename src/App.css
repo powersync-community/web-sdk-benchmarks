@@ -347,7 +347,7 @@ button.danger:hover {
   line-height: 1.4;
 }
 
-/* Watch Grid - 4 column layout */
+/* Watch Grid - 4 columns by default; the VFS views override this inline */
 .watch-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

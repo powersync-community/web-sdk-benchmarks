@@ -1,5 +1,5 @@
-import { usePowerSync } from "@powersync/react";
-import { AbstractPowerSyncDatabase } from "@powersync/web";
+import { usePowerSyncOrNull } from "@powersync/react";
+import type { CommonPowerSyncDatabase } from "@powersync/web";
 import { useMetricsActions } from "../stores/metricsStore";
 import { useDataModelStore } from "../stores/dataModelStore";
 import { type DataModel } from "../schemas";
@@ -10,7 +10,7 @@ interface ControlPanelProps {
   throttleMs: number;
   onThrottleChange: (value: number) => void;
   onToggleList: () => void;
-  databases?: AbstractPowerSyncDatabase[];
+  databases?: CommonPowerSyncDatabase[];
   extraControls?: React.ReactNode;
   model: DataModel;
 }
@@ -39,7 +39,7 @@ interface SeededComplexRefs {
  * todos keep referencing valid IDs and we don't bloat the demo dataset.
  */
 async function ensureUsersAndTags(
-  db: AbstractPowerSyncDatabase,
+  db: CommonPowerSyncDatabase,
 ): Promise<SeededComplexRefs> {
   const existingUsers = await db.getAll<{ id: string }>(
     `SELECT id FROM users LIMIT ?`,
@@ -80,7 +80,7 @@ async function ensureUsersAndTags(
  * and 0–3 tag links via `todo_tags`. Runs inside a single writeTransaction.
  */
 async function seedComplexData(
-  db: AbstractPowerSyncDatabase,
+  db: CommonPowerSyncDatabase,
   listId: string,
   n: number,
 ): Promise<void> {
@@ -133,7 +133,9 @@ export function ControlPanel({
   extraControls,
   model,
 }: ControlPanelProps) {
-  const contextDb = usePowerSync();
+  // VFS comparison mode renders this panel outside any PowerSyncContext and
+  // passes `databases` instead, so the context DB is optional here.
+  const contextDb = usePowerSyncOrNull();
   const { resetAllMetrics } = useMetricsActions();
   const setModel = useDataModelStore((s) => s.setModel);
   const activeDatabases =

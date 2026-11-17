@@ -1,9 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import {
-  PowerSyncDatabase,
-  WASQLiteOpenFactory,
-  WASQLiteVFS,
-} from "@powersync/web";
+import { PowerSyncDatabase, WASQLiteVFS } from "@powersync/web";
 import { type VFSConfig } from "../vfsConfig";
 import { initPowerSync } from "../powersync";
 import { simpleSchema } from "../schemas";
@@ -15,22 +11,23 @@ const BENCH_LIST_ID = "00000000-0000-bench-0000-000000000000";
 const PHASE_SETTLE_MS = 500;
 
 /**
- * Wipe persisted storage for a VFS's bench DB so each run starts from zero.
- *
- * Required for `OPFSWriteAheadVFS`: its strict-WAL check rejects the deferred
- * write tx that PowerSync core's `powersync_replace_schema` issues on reopen,
- * surfacing as `IOERR`. Applied to every VFS for consistent baselines.
+ * Wipe persisted storage for a VFS's bench DB so each run starts from zero,
+ * giving every backend the same clean baseline. In-memory backends have
+ * nothing to purge.
  *
  * File layouts (keyed by `dbFileName`):
  *   IDBBatchAtomicVFS    — IndexedDB database named `dbFileName`
  *   OPFSCoopSyncVFS      — OPFS files: name, name-journal, name-wal
  *   AccessHandlePoolVFS  — OPFS directory `dbFileName` (random-named children)
  *   OPFSWriteAheadVFS    — OPFS files: name, name-wa0, name-wa1
+ *   SimpleOpfsVFS        — OPFS files: name, name-journal
  */
 async function purgeVfsStorage(
-  vfs: WASQLiteVFS,
+  { vfs, persistent }: VFSConfig,
   dbFilename: string,
 ): Promise<void> {
+  if (!persistent) return;
+
   if (vfs === WASQLiteVFS.IDBBatchAtomicVFS) {
     await new Promise<void>((resolve) => {
       const req = indexedDB.deleteDatabase(dbFilename);
@@ -78,7 +75,7 @@ export interface BenchmarkConfig {
   readSeedCount: number;
   /**
    * SQLite page cache size in KiB, passed straight through to the PowerSync
-   * `WASQLiteOpenFactory` (`cacheSizeKb`), which applies it as
+   * `database` open options (`cacheSizeKb`), which applies it as
    * `PRAGMA cache_size = -${cacheSizeKb}`. The SDK default is 50 MiB (51200),
    * large enough to hold the entire read working set at default seed counts —
    * so the read phase serves pages from memory, not the VFS. Lowering this
@@ -87,7 +84,7 @@ export interface BenchmarkConfig {
   cacheSizeKb: number;
   /**
    * Number of additional read-only worker connections, passed straight through
-   * to `WASQLiteOpenFactory` (`additionalReaders`). **Only `OPFSWriteAheadVFS`
+   * to the `database` open options (`additionalReaders`). **Only `OPFSWriteAheadVFS`
    * acts on this** — the SDK opens this many extra workers, each hosting a
    * `SQLITE_OPEN_READONLY` connection, so reads can run concurrently with a
    * write (and with each other). Every other VFS ignores it and serves all
@@ -103,12 +100,20 @@ export interface BenchmarkConfig {
    * other VFSs aren't WAL-mode, so `wal_autocheckpoint` / `wal_checkpoint` are
    * harmless no-ops there and we skip issuing them.
    *
-   * - `"auto"` — the VFS default (`wal_autocheckpoint=1`): a passive checkpoint
-   *   runs after *every* transaction commit. The WAL stays tiny, but each
-   *   commit pays the checkpoint cost.
+   * `wal_autocheckpoint` is an on/off switch on this VFS, not a frequency:
+   * any non-zero value enables auto-checkpointing. An auto-checkpoint is only
+   * attempted once (1) the WAL holds at least `PRAGMA journal_size_limit`
+   * pages (default 1000), (2) every connection is reading from the newer WAL
+   * file so the older one can be recycled, and (3) some connection has
+   * `wal_autocheckpoint` enabled.
+   *
+   * - `"auto"` — the VFS default (`wal_autocheckpoint=1`, i.e. enabled). The
+   *   VFS checkpoints in the background whenever the conditions above hold.
    * - `"manual"` — `wal_autocheckpoint=0` plus a periodic driver that issues
-   *   `PRAGMA wal_checkpoint(passive)` every `checkpointIntervalMs`. Commits
-   *   skip the per-commit checkpoint; the WAL drains on a timer instead.
+   *   `PRAGMA wal_checkpoint(full)` every `checkpointIntervalMs`. Unlike
+   *   `passive` (which only attempts a checkpoint under the same conditions as
+   *   an auto-checkpoint and returns before it completes), `full` takes the
+   *   write lock and guarantees the checkpoint has run when it returns.
    * - `"disabled"` — `wal_autocheckpoint=0` with no driver. Pure write
    *   throughput with an ever-growing WAL — a ceiling, not a real setting.
    */
@@ -137,7 +142,7 @@ export const DEFAULT_BENCHMARK_CONFIG: BenchmarkConfig = {
   readSeedCount: 1000,
   cacheSizeKb: DEFAULT_CACHE_SIZE_KB,
   additionalReaders: DEFAULT_ADDITIONAL_READERS,
-  // "auto" mirrors the VFS default (wal_autocheckpoint=1) — unchanged behavior.
+  // "auto" mirrors the VFS default (auto-checkpointing enabled).
   checkpointMode: "auto",
   checkpointIntervalMs: DEFAULT_CHECKPOINT_INTERVAL_MS,
   mode: "sequential",
@@ -187,7 +192,7 @@ export interface CheckpointStats {
   checkpointsIssued: number;
   /**
    * Manual mode only: the highest pre-drain WAL size (in *distinct* pages) the
-   * checkpoint driver observed — each `PRAGMA wal_checkpoint(passive)` returns
+   * checkpoint driver observed — each `PRAGMA wal_checkpoint(full)` returns
    * the size just before it drains. `null` for auto/disabled (no comparable
    * sample) or if the VFS didn't report it. Note this counts distinct pages, so
    * it reflects the working-set footprint, not cumulative log growth.
@@ -530,8 +535,7 @@ function prefixKeys(
  * (which return SQLite's standard 3-column busy/log/checkpointed row instead).
  */
 function parseWalPages(result: unknown): number | null {
-  const row = (result as { rows?: { _array?: Record<string, unknown>[] } })?.rows
-    ?._array?.[0];
+  const row = (result as { array?: Record<string, unknown>[] })?.array?.[0];
   if (!row) return null;
   const first = Object.values(row)[0];
   const n =
@@ -544,13 +548,16 @@ function parseWalPages(result: unknown): number | null {
 }
 
 /**
- * Issue a passive checkpoint on the write connection. Routed through
- * `db.execute` (writeLock) — a checkpoint writes pages back to the main file, so
- * it must not land on a SQLITE_OPEN_READONLY reader worker. Returns the
- * pre-checkpoint WAL size in pages, or null if unavailable.
+ * Issue a FULL checkpoint on the write connection. `passive` would only
+ * attempt one (and return before it finishes); `full` guarantees the WAL has
+ * been checkpointed by the time it resolves. Routed through `db.execute`
+ * (writeLock) — a checkpoint writes pages back to the main file, so it must
+ * not land on a SQLITE_OPEN_READONLY reader worker, and `full` is rejected
+ * while a transaction is in progress. Returns the pre-checkpoint WAL size in
+ * pages, or null if unavailable.
  */
-async function checkpointPassive(db: PowerSyncDatabase): Promise<number | null> {
-  const r = await db.execute(`PRAGMA wal_checkpoint(passive)`);
+async function checkpointFull(db: PowerSyncDatabase): Promise<number | null> {
+  const r = await db.execute(`PRAGMA wal_checkpoint(full)`);
   return parseWalPages(r);
 }
 
@@ -560,11 +567,11 @@ interface CheckpointDriver {
 }
 
 /**
- * The "dedicated checkpoint worker": a timer that issues passive checkpoints
- * every `intervalMs` instead of letting the VFS checkpoint on each commit. The
- * actual checkpoint I/O runs asynchronously on the VFS's own write worker (via
- * its `pendingOps` queue), so this only kicks it off. An in-flight guard keeps
- * checkpoints from stacking when one runs longer than the interval.
+ * The "dedicated checkpoint worker": a timer that issues FULL checkpoints
+ * every `intervalMs` instead of leaving it to the VFS's auto-checkpointing.
+ * Each one holds the write lock until the checkpoint completes, so writes
+ * queue behind it. An in-flight guard keeps checkpoints from stacking when one
+ * runs longer than the interval.
  */
 function startCheckpointDriver(
   db: PowerSyncDatabase,
@@ -577,7 +584,7 @@ function startCheckpointDriver(
   const handle = setInterval(() => {
     if (inFlight || cancelledRef.current) return;
     inFlight = true;
-    checkpointPassive(db)
+    checkpointFull(db)
       .then((pages) => {
         issued++;
         if (pages != null && (walPagesPeak == null || pages > walPagesPeak)) {
@@ -658,14 +665,12 @@ export function useVfsBenchmark() {
         try {
           // Create an isolated DB instance — only one worker + WASM instance alive at a time
           patchState(vfsCfg.id, { phase: "warmup", status: "running" });
-          // Wipe any leftover bench file before opening. OPFSWriteAheadVFS
-          // rejects the deferred-tx write that `powersync_replace_schema`
-          // issues on reopen (IOERR); starting fresh sidesteps it and also
-          // gives every VFS a clean baseline.
-          await purgeVfsStorage(vfsCfg.vfs, vfsCfg.benchDbFilename);
+          // Wipe any leftover bench file before opening so every VFS starts
+          // from a clean baseline.
+          await purgeVfsStorage(vfsCfg, vfsCfg.benchDbFilename);
           db = new PowerSyncDatabase({
             schema: simpleSchema,
-            database: new WASQLiteOpenFactory({
+            database: {
               dbFilename: vfsCfg.benchDbFilename,
               vfs: vfsCfg.vfs,
               // Applied by the SDK as `PRAGMA cache_size = -${cacheSizeKb}`.
@@ -675,7 +680,8 @@ export function useVfsBenchmark() {
               // other VFSs ignore it. Exercised by the interleaved phase's
               // concurrent read loops.
               additionalReaders: config.additionalReaders,
-            }),
+              ...vfsCfg.openOptions,
+            },
           });
           await initPowerSync(db);
 
@@ -683,7 +689,7 @@ export function useVfsBenchmark() {
           // for every other VFS these pragmas are no-ops, so we skip them and
           // leave the checkpoint stats marked "not applicable".
           if (isWal && config.checkpointMode !== "auto") {
-            // Stop the VFS from checkpointing after every commit.
+            // Turn off the VFS's automatic checkpointing.
             await db.execute(`PRAGMA wal_autocheckpoint=0`);
           }
           if (isWal && config.checkpointMode === "manual") {
@@ -741,7 +747,7 @@ export function useVfsBenchmark() {
           let checkpointsIssued = 0;
           let walPagesPeak: number | null = null;
           // Peak WAL is only meaningful (and self-consistent) when the manual
-          // driver samples it via its own passive checkpoints — every sample is
+          // driver samples it via its own full checkpoints — every sample is
           // the pre-drain high-water mark. We deliberately do NOT take an
           // end-of-run reading for auto/disabled: that single quiescent sample
           // isn't comparable to the driver's peak, and `getWriteAheadSize()`
